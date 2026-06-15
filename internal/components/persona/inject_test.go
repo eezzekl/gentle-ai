@@ -102,6 +102,22 @@ func TestInjectClaudeGentlemanWritesSectionWithRealContent(t *testing.T) {
 	if !strings.Contains(text, "Persona Voice") {
 		t.Fatal("CLAUDE.md residual persona section missing the 'Persona Voice' pointer to the output style")
 	}
+
+	// WU-5: the ## Language section is stripped from the base asset; the language
+	// directive is composed and appended at inject time (WU-6, slice 2). Until
+	// WU-6 lands, the residual is region-neutral: no hardcoded regional voice.
+	// No required phrases here — main already moved Persona Scope out of the
+	// Claude persona residual and into the output style, so the guardrail this
+	// commit originally asserted on the residual now belongs to that channel.
+	assertLanguageGuardrails(t, text,
+		nil,
+		[]string{
+			`Say "déjame verificar"`,
+			"Spanish input → Rioplatense Spanish",
+			"English input → same warm energy",
+			"use warm natural Rioplatense Spanish (voseo)",
+		},
+	)
 }
 
 func TestInjectKimiGentlemanIncludesProjectInstructionsAndLoadedSkills(t *testing.T) {
@@ -595,8 +611,11 @@ func TestInjectOpenClawWritesPersonaToWorkspaceSoulAndNotAgents(t *testing.T) {
 	if !strings.Contains(soulText, "Senior Architect") {
 		t.Fatalf("SOUL.md missing real persona content; got:\n%s", soulText)
 	}
-	if !strings.Contains(soulText, "Match the user's current language in your REPLY ONLY") {
-		t.Fatalf("SOUL.md missing persona language guardrail; got:\n%s", soulText)
+	// WU-5: ## Language section removed from base assets; language directive is
+	// composed and appended in WU-6 (slice 2). The base asset is region-neutral.
+	// Check the persona scope guardrail instead (in ## Persona Scope, not ## Language).
+	if !strings.Contains(soulText, "Persona Scope") {
+		t.Fatalf("SOUL.md missing persona scope guardrail section; got:\n%s", soulText)
 	}
 
 	agentsContent, err := os.ReadFile(agentsPath)
@@ -1251,16 +1270,19 @@ func TestInjectGeminiGentlemanWritesSystemPromptWithRealContent(t *testing.T) {
 	if !strings.Contains(text, "Senior Architect") {
 		t.Fatal("Gemini persona missing 'Senior Architect'")
 	}
+	// WU-5: ## Language section removed from base assets (generic/persona-gentleman.md).
+	// Language directive composed and appended in WU-6 (slice 2). Base asset is region-neutral.
 	assertLanguageGuardrails(t, text,
 		[]string{
-			"Match the user's current language in your REPLY ONLY",
-			"Do not switch languages unless the user does, asks you to, or you are quoting/translating content.",
-			"When replying to the user in English, keep the full reply in natural English with the same warm energy.",
+			// Persona Scope section must survive.
+			"Persona Scope",
 		},
 		[]string{
 			`Say "déjame verificar"`,
 			"Spanish input → Rioplatense Spanish",
 			"English input → same warm energy",
+			// After WU-5, the Rioplatense reply directive is gone from the base asset.
+			"use warm natural Rioplatense Spanish (voseo)",
 		},
 	)
 }
@@ -2306,7 +2328,15 @@ var legacyKimiOutputStyleGentlemanLines = []string{
 	// both normative elements without reintroducing drift.
 	"- If the selected reply language is English, every part of the direct reply must be English: greetings, interjections, acknowledgements, transition phrases, and the first sentence. Do not use Hola, dale, listo, Spanish punctuation, or other Spanish fragments.",
 	"- Prompts starting with or dominated by hi, hello, hey, or similar English greetings are English prompts unless the user explicitly asks for another language.",
-	"- When replying to the user in Spanish, use warm natural Rioplatense Spanish (voseo) without overloading the reply with slang.",
+	// decouple-persona-language WU-5 removed the legacy line
+	//   "- When replying to the user in Spanish, use warm natural Rioplatense Spanish (voseo) ..."
+	// from this frozen list. It is the ONE legacy line the region axis
+	// parameterizes: ComposeLanguageDirective emits the reply-voice line for the
+	// region the user selected, so keeping Rioplatense static here would override
+	// a user who chose mexico/colombia/spain/chile. Its absence is asserted
+	// positively by regionalVoiceDirectiveIsNotStatic below, so the removal is a
+	// recorded contract change rather than a silently dropped guardrail. Every
+	// other legacy line in this list is region-agnostic and stays frozen.
 	"- In every language, be warm and genuine, NEVER sarcastic or mocking. You're passionate because you CARE, not because you want to make them feel bad.",
 	"## Tone",
 	"Passionate and direct, but from a place of CARING. Use rhetorical questions sparingly. Repeat only when emphasis genuinely helps. Use CAPS for key words sparingly. You're a MENTOR helping someone grow, not a drill sergeant looking for mistakes.",
@@ -2380,6 +2410,18 @@ var legacyKimiOutputStyleNeutralLines = []string{
 // still exists in the reconciled text, and the reconciled Kimi asset is
 // overwritten to be byte-identical to the reconciled Claude asset (no unique
 // Kimi content is lost; Kimi merely gains the union lines it was missing).
+// regionalVoiceDirectiveIsNotStatic asserts the counterpart of the legacy-line
+// removal above: the regional reply directive must be ABSENT from a reconciled
+// style, because the region axis composes it per selection at inject time. This
+// keeps the frozen-list edit honest — a guardrail was not dropped, it was
+// inverted into a positive requirement.
+func regionalVoiceDirectiveIsNotStatic(t *testing.T, styleAsset, content string) {
+	t.Helper()
+	if strings.Contains(content, "use warm natural Rioplatense Spanish (voseo) without overloading") {
+		t.Fatalf("%s hardcodes the Rioplatense reply directive; the region axis must supply it via ComposeLanguageDirective", styleAsset)
+	}
+}
+
 func TestKimiOutputStyleSupersetOfLegacyKimiCopy(t *testing.T) {
 	t.Run("gentleman", func(t *testing.T) {
 		reconciled := assets.MustRead("kimi/output-style-gentleman.md")
@@ -2397,6 +2439,7 @@ func TestKimiOutputStyleSupersetOfLegacyKimiCopy(t *testing.T) {
 		if !strings.Contains(reconciled, "the full response stays in English unless the user explicitly asks for another language or you are translating/quoting") {
 			t.Fatal("reconciled kimi/output-style-gentleman.md lost the 'full-English default with exception' normative element of the merged English-reply bullet")
 		}
+		regionalVoiceDirectiveIsNotStatic(t, "kimi/output-style-gentleman.md", reconciled)
 		claudeReconciled := assets.MustRead("claude/output-style-gentleman.md")
 		if reconciled != claudeReconciled {
 			t.Fatal("kimi/output-style-gentleman.md must be overwritten with the same reconciled text as claude/output-style-gentleman.md (Decision 4)")
@@ -2430,12 +2473,28 @@ type movedPersonaRule struct {
 	frozen       string
 	checkAgainst string
 	mergedNote   string
+	// composedNote documents a rule that is deliberately NO LONGER static in the
+	// reconciled style because the two-axis model composes it per selection at
+	// inject time. Such a rule must be ABSENT from the asset — a hardcoded
+	// regional voice would contradict a user who selected another region.
+	//
+	// The entry stays in the frozen list rather than being deleted: silently
+	// dropping a MOVE-tagged rule is precisely the JD-016/017 failure class this
+	// guard exists to catch, so the exemption is recorded and asserted, not
+	// removed from sight.
+	composedNote string
 }
 
 func assertMovedPersonaRules(t *testing.T, styleAsset string, rules []movedPersonaRule) {
 	t.Helper()
 	reconciled := assets.MustRead(styleAsset)
 	for _, r := range rules {
+		if r.composedNote != "" {
+			if strings.Contains(reconciled, r.checkAgainst) {
+				t.Fatalf("%s: rule %q must NOT be static in the reconciled style — it is composed per selection at inject time (%s)", styleAsset, r.checkAgainst, r.composedNote)
+			}
+			continue
+		}
 		if !strings.Contains(reconciled, r.checkAgainst) {
 			if r.mergedNote != "" {
 				t.Fatalf("%s: merged form %q (for frozen HEAD rule %q; %s) not found in reconciled style", styleAsset, r.checkAgainst, r.frozen, r.mergedNote)
@@ -2476,7 +2535,9 @@ var claudeGentlemanMovedRules = []movedPersonaRule{
 		mergedNote:   "style expanded the exclusion list ('persona wording'/'stylistic momentum' vs 'persona momentum') without dropping the priority-ordering rule"},
 	{frozen: "- For mixed-language prompts, use the dominant language of the user's direct request. Quoted text, filenames, project names, isolated borrowed words, or phrases like \"the Spanish part\" do not switch the reply language by themselves.", checkAgainst: "- For mixed-language prompts, use the dominant language of the user's direct request. Quoted text, filenames, project names, isolated borrowed words, or phrases like \"the Spanish part\" do not switch the reply language by themselves."},
 	{frozen: "- Do not switch languages unless the user does, asks you to, or you are quoting/translating content.", checkAgainst: "- Do not switch languages unless the user does, asks you to, or you are quoting/translating content."},
-	{frozen: "- When replying to the user in Spanish, use warm natural Rioplatense Spanish (voseo) without overloading the reply with slang.", checkAgainst: "- When replying to the user in Spanish, use warm natural Rioplatense Spanish (voseo) without overloading the reply with slang."},
+	{frozen: "- When replying to the user in Spanish, use warm natural Rioplatense Spanish (voseo) without overloading the reply with slang.",
+		checkAgainst: "use warm natural Rioplatense Spanish (voseo) without overloading",
+		composedNote: "decouple-persona-language WU-5: this is the ONE rule the region axis parameterizes. ComposeLanguageDirective emits the reply-voice line for the region the user selected, so keeping Rioplatense hardcoded here would override a user who chose mexico/colombia/spain/chile. Every other language rule in this list is region-agnostic and stays static"},
 	{frozen: "- When replying to the user in English, keep the full reply in natural English with the same warm energy.",
 		checkAgainst: "keep the full reply in natural English with the same warm energy",
 		mergedNote:   "JD-013/Decision 4: merged with the style's own near-duplicate English-reply bullet into one canonical sentence"},
@@ -2536,7 +2597,9 @@ var kimiGentlemanMovedRules = []movedPersonaRule{
 		checkAgainst: "Always match the user's current language in your reply.",
 		mergedNote:   "JD-019: the persona's 'REPLY ONLY' phrasing was folded into the style's own Language Rules opener; this is the exact combined-channel phrase"},
 	{frozen: "- Do not switch languages unless the user does, asks you to, or you are quoting/translating content.", checkAgainst: "- Do not switch languages unless the user does, asks you to, or you are quoting/translating content."},
-	{frozen: "- When replying to the user in Spanish, use warm natural Rioplatense Spanish (voseo) without overloading the reply with slang.", checkAgainst: "- When replying to the user in Spanish, use warm natural Rioplatense Spanish (voseo) without overloading the reply with slang."},
+	{frozen: "- When replying to the user in Spanish, use warm natural Rioplatense Spanish (voseo) without overloading the reply with slang.",
+		checkAgainst: "use warm natural Rioplatense Spanish (voseo) without overloading",
+		composedNote: "decouple-persona-language WU-5: this is the ONE rule the region axis parameterizes. ComposeLanguageDirective emits the reply-voice line for the region the user selected, so keeping Rioplatense hardcoded here would override a user who chose mexico/colombia/spain/chile. Every other language rule in this list is region-agnostic and stays static"},
 	{frozen: "- When replying to the user in English, keep the full reply in natural English with the same warm energy.",
 		checkAgainst: "keep the full reply in natural English with the same warm energy",
 		mergedNote:   "JD-013/Decision 4: merged with the style's own near-duplicate English-reply bullet into one canonical sentence"},

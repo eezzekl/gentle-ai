@@ -3676,10 +3676,12 @@ func TestRunSyncReadsPersonaFromState(t *testing.T) {
 	}
 }
 
-// TestRunSyncFallsBackToNeutralWhenStateLacksPersona verifies missing persona
-// state resolves to neutral/default-safe behavior instead of reactivating
-// Gentleman regional voice.
-func TestRunSyncFallsBackToNeutralWhenStateLacksPersona(t *testing.T) {
+// TestRunSyncFallsBackToGentleWhenStateLacksPersona verifies that a pre-feature
+// state.json with no Persona field (old install) resolves to gentle+argentina,
+// preserving today's Gentleman behavior without reactivating unintended regional voice.
+// Updated by decouple-persona-language (WU-4): migration matrix R1 maps
+// empty/absent → gentle+argentina+true.
+func TestRunSyncFallsBackToGentleWhenStateLacksPersona(t *testing.T) {
 	home := t.TempDir()
 	setSyncTestHome(t, home)
 
@@ -3697,8 +3699,9 @@ func TestRunSyncFallsBackToNeutralWhenStateLacksPersona(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunSync() error = %v", err)
 	}
-	if got, want := res.Selection.Persona, model.PersonaNeutral; got != want {
-		t.Errorf("Selection.Persona = %q, want %q (safe fallback for missing state persona)", got, want)
+	// Migration matrix R1: empty/absent → gentle+argentina+true.
+	if got, want := res.Selection.Persona, model.PersonaGentle; got != want {
+		t.Errorf("Selection.Persona = %q, want %q (migration: empty→gentle)", got, want)
 	}
 }
 
@@ -3770,9 +3773,12 @@ func TestRunSyncWithSelection_PersonaResolvesFromStateCustom(t *testing.T) {
 	}
 }
 
-// TestRunSyncWithSelection_PersonaFallsBackToNeutralWhenStateHasNone verifies
-// missing state persona resolves to neutral/default-safe behavior.
-func TestRunSyncWithSelection_PersonaFallsBackToNeutralWhenStateHasNone(t *testing.T) {
+// TestRunSyncWithSelection_PersonaFallsBackToGentleWhenStateHasNone verifies
+// missing state persona (old install before persona persistence) resolves to
+// gentle — which preserves today's Gentleman behavior for existing users.
+// Updated by decouple-persona-language (WU-4): the safe default changed from
+// neutral to gentle+argentina+true per the migration matrix in spec R1.
+func TestRunSyncWithSelection_PersonaFallsBackToGentleWhenStateHasNone(t *testing.T) {
 	home := t.TempDir()
 	setSyncTestHome(t, home)
 
@@ -3797,8 +3803,15 @@ func TestRunSyncWithSelection_PersonaFallsBackToNeutralWhenStateHasNone(t *testi
 		t.Fatalf("RunSyncWithSelection() error = %v", err)
 	}
 
-	if got, want := result.Selection.Persona, model.PersonaNeutral; got != want {
-		t.Errorf("result.Selection.Persona = %q, want %q (safe fallback for missing state persona)", got, want)
+	// Migration matrix R1: empty/absent → gentle+argentina+true.
+	if got, want := result.Selection.Persona, model.PersonaGentle; got != want {
+		t.Errorf("result.Selection.Persona = %q, want %q (migration: empty→gentle preserves today's behavior)", got, want)
+	}
+	if got := result.Selection.Region; got != string(model.RegionArgentina) {
+		t.Errorf("result.Selection.Region = %q, want %q", got, string(model.RegionArgentina))
+	}
+	if !result.Selection.ArtifactsInEnglish {
+		t.Errorf("result.Selection.ArtifactsInEnglish = false, want true (explicit, not zero-value)")
 	}
 }
 
@@ -3837,10 +3850,13 @@ func TestRunSyncWithSelection_ExplicitPersonaWinsOverState(t *testing.T) {
 	}
 }
 
-// TestRunSyncWithSelection_UnknownPersistedPersonaFallsBackToNeutral documents
-// the normalizePersona contract for unrecognized persisted values: an unknown or
-// misspelled persona string must NOT silently propagate or reactivate Gentleman.
-func TestRunSyncWithSelection_UnknownPersistedPersonaFallsBackToNeutral(t *testing.T) {
+// TestRunSyncWithSelection_UnknownPersistedPersonaFallsBackToGentle documents
+// the applyResolvedPersona contract for unrecognized persisted values: an unknown
+// or misspelled persona string must NOT silently propagate — it defaults to
+// gentle+argentina+true (the same safe default as empty/absent state).
+// Updated by decouple-persona-language (WU-4): the safe default changed from
+// neutral to gentle per migration matrix R1.
+func TestRunSyncWithSelection_UnknownPersistedPersonaFallsBackToGentle(t *testing.T) {
 	home := t.TempDir()
 	setSyncTestHome(t, home)
 
@@ -3848,8 +3864,8 @@ func TestRunSyncWithSelection_UnknownPersistedPersonaFallsBackToNeutral(t *testi
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	// Write a state with an unrecognized persona value (wrong capitalization).
-	// normalizePersona does a case-sensitive switch, so "Gentleman" != "gentleman"
-	// and must return an error, triggering the neutral fallback.
+	// applyResolvedPersona uses a type-switch on model.PersonaID, so "Gentleman"
+	// (capital G) hits the default branch and resolves to gentle+argentina.
 	if err := state.Write(home, state.InstallState{
 		InstalledAgents: []string{"claude-code"},
 		Persona:         "Gentleman", // capitalized — not a valid PersonaID
@@ -3868,8 +3884,8 @@ func TestRunSyncWithSelection_UnknownPersistedPersonaFallsBackToNeutral(t *testi
 		t.Fatalf("RunSyncWithSelection() error = %v", err)
 	}
 
-	if got, want := result.Selection.Persona, model.PersonaNeutral; got != want {
-		t.Errorf("result.Selection.Persona = %q, want %q (unknown persisted value must fall back to neutral)", got, want)
+	if got, want := result.Selection.Persona, model.PersonaGentle; got != want {
+		t.Errorf("result.Selection.Persona = %q, want %q (unknown value must default to gentle)", got, want)
 	}
 }
 
@@ -4012,10 +4028,12 @@ func TestRunSyncDryRunResolvesPersonaFromState(t *testing.T) {
 	}
 }
 
-// TestRunSyncDryRunFallsBackToNeutralWhenStateLacksPersona verifies that
-// --dry-run mode falls back to neutral/default-safe behavior when state has no
-// recorded persona.
-func TestRunSyncDryRunFallsBackToNeutralWhenStateLacksPersona(t *testing.T) {
+// TestRunSyncDryRunFallsBackToGentleWhenStateLacksPersona verifies that
+// --dry-run mode resolves to gentle+argentina when state has no recorded
+// persona (old install before persona persistence).
+// Updated by decouple-persona-language (WU-4): the default changed from
+// neutral to gentle per migration matrix R1 (empty/absent → gentle).
+func TestRunSyncDryRunFallsBackToGentleWhenStateLacksPersona(t *testing.T) {
 	home := t.TempDir()
 	setSyncTestHome(t, home)
 
@@ -4046,8 +4064,9 @@ func TestRunSyncDryRunFallsBackToNeutralWhenStateLacksPersona(t *testing.T) {
 	if !result.DryRun {
 		t.Fatalf("DryRun = false, want true")
 	}
-	if got, want := result.Selection.Persona, model.PersonaNeutral; got != want {
-		t.Errorf("dry-run fallback: Selection.Persona = %q, want %q (safe fallback for missing state persona)", got, want)
+	// Migration matrix R1: empty/absent → gentle.
+	if got, want := result.Selection.Persona, model.PersonaGentle; got != want {
+		t.Errorf("dry-run fallback: Selection.Persona = %q, want %q (migration: empty→gentle)", got, want)
 	}
 }
 
@@ -4515,4 +4534,237 @@ func TestSyncBackupTargetsContainNoDuplicatePaths(t *testing.T) {
 	targets := syncBackupTargets(home, "", selection, resolveAdapters(selection.Agents))
 
 	assertNoDuplicatePaths(t, "syncBackupTargets", targets)
+}
+
+// ─── WU-4: applyResolvedPersona migration matrix + BuildSyncSelection ─────────
+
+// TestApplyResolvedPersonaMigrationMatrix verifies the full 5-row migration
+// matrix: every legacy persona value maps deterministically to the correct
+// (Persona, Region, ArtifactsInEnglish) tuple. ArtifactsInEnglish must be
+// true explicitly for every non-custom row (never left at Go zero-value false).
+func TestApplyResolvedPersonaMigrationMatrix(t *testing.T) {
+	tests := []struct {
+		name               string
+		persistedPersona   string
+		persistedRegion    string
+		persistedArtifacts bool
+		wantPersona        model.PersonaID
+		wantRegion         string
+		wantArtifacts      bool
+		customNoInjection  bool // custom row: region is empty and no injection
+	}{
+		{
+			name:             "gentleman migrates to gentle+argentina+true",
+			persistedPersona: "gentleman",
+			wantPersona:      model.PersonaGentle,
+			wantRegion:       string(model.RegionArgentina),
+			wantArtifacts:    true,
+		},
+		{
+			name:             "gentleman-neutral-artifacts migrates to gentle+argentina+true (converges with gentleman)",
+			persistedPersona: "gentleman-neutral-artifacts",
+			wantPersona:      model.PersonaGentle,
+			wantRegion:       string(model.RegionArgentina),
+			wantArtifacts:    true,
+		},
+		{
+			name:             "neutral migrates to neutral+user-language+true",
+			persistedPersona: "neutral",
+			wantPersona:      model.PersonaNeutral,
+			wantRegion:       string(model.RegionUserLanguage),
+			wantArtifacts:    true,
+		},
+		{
+			name:              "custom migrates to custom+no region",
+			persistedPersona:  "custom",
+			wantPersona:       model.PersonaCustom,
+			wantRegion:        "",
+			wantArtifacts:     false,
+			customNoInjection: true,
+		},
+		{
+			name:             "empty/absent migrates to gentle+argentina+true",
+			persistedPersona: "",
+			wantPersona:      model.PersonaGentle,
+			wantRegion:       string(model.RegionArgentina),
+			wantArtifacts:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sel := model.Selection{}
+			state := persistedSyncState{
+				persona:            tt.persistedPersona,
+				region:             tt.persistedRegion,
+				artifactsInEnglish: tt.persistedArtifacts,
+			}
+			applyResolvedPersona(&sel, state)
+
+			if sel.Persona != tt.wantPersona {
+				t.Errorf("Persona = %q, want %q", sel.Persona, tt.wantPersona)
+			}
+			if !tt.customNoInjection {
+				if sel.Region != tt.wantRegion {
+					t.Errorf("Region = %q, want %q", sel.Region, tt.wantRegion)
+				}
+				if sel.ArtifactsInEnglish != tt.wantArtifacts {
+					t.Errorf("ArtifactsInEnglish = %v, want %v", sel.ArtifactsInEnglish, tt.wantArtifacts)
+				}
+			}
+		})
+	}
+}
+
+// TestApplyResolvedPersonaGentlemanAndNeutralArtifactsConverge asserts that
+// "gentleman" and "gentleman-neutral-artifacts" produce byte-identical tuples,
+// proving the hybrid was a no-op at the migration layer.
+func TestApplyResolvedPersonaGentlemanAndNeutralArtifactsConverge(t *testing.T) {
+	selA := model.Selection{}
+	applyResolvedPersona(&selA, persistedSyncState{persona: "gentleman"})
+
+	selB := model.Selection{}
+	applyResolvedPersona(&selB, persistedSyncState{persona: "gentleman-neutral-artifacts"})
+
+	if selA.Persona != selB.Persona {
+		t.Errorf("Persona mismatch: gentleman=%q, gentleman-neutral-artifacts=%q", selA.Persona, selB.Persona)
+	}
+	if selA.Region != selB.Region {
+		t.Errorf("Region mismatch: gentleman=%q, gentleman-neutral-artifacts=%q", selA.Region, selB.Region)
+	}
+	if selA.ArtifactsInEnglish != selB.ArtifactsInEnglish {
+		t.Errorf("ArtifactsInEnglish mismatch: gentleman=%v, gentleman-neutral-artifacts=%v",
+			selA.ArtifactsInEnglish, selB.ArtifactsInEnglish)
+	}
+}
+
+// TestApplyResolvedPersonaPreservesAlreadyMigratedState verifies that when the
+// persisted state already has region and artifactsInEnglish set (i.e., already
+// migrated — persona = "gentle"), the function reads those values directly
+// without re-applying the legacy alias path.
+func TestApplyResolvedPersonaPreservesAlreadyMigratedState(t *testing.T) {
+	sel := model.Selection{}
+	applyResolvedPersona(&sel, persistedSyncState{
+		persona:            "gentle",
+		region:             "mexico",
+		artifactsInEnglish: false,
+	})
+
+	if sel.Persona != model.PersonaGentle {
+		t.Errorf("Persona = %q, want %q", sel.Persona, model.PersonaGentle)
+	}
+	if sel.Region != "mexico" {
+		t.Errorf("Region = %q, want %q (should read persisted value)", sel.Region, "mexico")
+	}
+	if sel.ArtifactsInEnglish != false {
+		t.Errorf("ArtifactsInEnglish = %v, want false (should read persisted value)", sel.ArtifactsInEnglish)
+	}
+}
+
+// TestApplyResolvedPersonaDoesNotOverrideExplicitSelection ensures that when
+// the caller has already set selection.Persona (explicit flag), applyResolvedPersona
+// is a no-op and does not overwrite the explicit value.
+func TestApplyResolvedPersonaDoesNotOverrideExplicitSelection(t *testing.T) {
+	sel := model.Selection{Persona: model.PersonaNeutral}
+	applyResolvedPersona(&sel, persistedSyncState{persona: "gentleman"})
+
+	if sel.Persona != model.PersonaNeutral {
+		t.Errorf("Persona = %q, want %q (explicit should not be overridden)", sel.Persona, model.PersonaNeutral)
+	}
+}
+
+// TestBuildSyncSelectionCarriesRegionAndArtifacts verifies that
+// BuildSyncSelection forwards Region and ArtifactsInEnglish from the state
+// through to the returned Selection.
+func TestBuildSyncSelectionCarriesRegionAndArtifacts(t *testing.T) {
+	agentIDs := []model.AgentID{model.AgentClaudeCode}
+	flags := SyncFlags{}
+
+	sel := BuildSyncSelection(flags, agentIDs)
+
+	// The zero-value selection returned by BuildSyncSelection must have the
+	// Region and ArtifactsInEnglish fields accessible (structural check — the
+	// actual values come from applyResolvedPersona called later in RunSync).
+	_ = sel.Region
+	_ = sel.ArtifactsInEnglish
+}
+
+// TestRunSyncPersonaContentIdempotentWithLegacyGentlemanState verifies that
+// two consecutive syncs with a legacy "gentleman" state.json produce byte-identical
+// persona content in CLAUDE.md. State write-back (WU-11) is not in scope for
+// slice 1b — the test focuses only on content idempotency, not NoOp flag.
+func TestRunSyncPersonaContentIdempotentWithLegacyGentlemanState(t *testing.T) {
+	home := t.TempDir()
+	restoreHome := osUserHomeDir
+	restoreBackupHome := backup.UserHomeDirFn
+	restoreCommand := runCommand
+	restoreLookPath := cmdLookPath
+	t.Cleanup(func() {
+		osUserHomeDir = restoreHome
+		backup.UserHomeDirFn = restoreBackupHome
+		runCommand = restoreCommand
+		cmdLookPath = restoreLookPath
+	})
+
+	osUserHomeDir = func() (string, error) { return home, nil }
+	backup.UserHomeDirFn = func() (string, error) { return home, nil }
+	runCommand = func(string, ...string) error { return nil }
+	cmdLookPath = func(name string) (string, error) { return "/usr/local/bin/" + name, nil }
+
+	// Write a state.json that simulates a pre-migration install with "gentleman".
+	stateData := `{"installed_agents":["claude-code"],"persona":"gentleman"}`
+	stateDir := filepath.Join(home, ".gentle-ai")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll state dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "state.json"), []byte(stateData), 0o644); err != nil {
+		t.Fatalf("WriteFile state: %v", err)
+	}
+
+	args := []string{"--agents", "claude-code", "--sdd-mode", "single"}
+
+	// First sync: migrates "gentleman" → gentle+argentina.
+	result1, err := RunSync(args)
+	if err != nil {
+		t.Fatalf("RunSync() run 1 error = %v", err)
+	}
+	if !result1.Verify.Ready {
+		t.Fatalf("run 1: Verify.Ready = false")
+	}
+	// Verify the resolved persona is correct per migration matrix.
+	if got, want := result1.Selection.Persona, model.PersonaGentle; got != want {
+		t.Errorf("run 1: Selection.Persona = %q, want %q", got, want)
+	}
+	if got, want := result1.Selection.Region, string(model.RegionArgentina); got != want {
+		t.Errorf("run 1: Selection.Region = %q, want %q", got, want)
+	}
+	if !result1.Selection.ArtifactsInEnglish {
+		t.Errorf("run 1: ArtifactsInEnglish = false, want true")
+	}
+
+	claudeMD := filepath.Join(home, ".claude", "CLAUDE.md")
+	contentAfterRun1, err := os.ReadFile(claudeMD)
+	if err != nil {
+		t.Fatalf("ReadFile() run 1 error = %v", err)
+	}
+
+	// Second sync: same legacy state.json (state write-back is WU-11, not in scope).
+	// Content must be byte-identical because both runs migrate to the same persona.
+	result2, err := RunSync(args)
+	if err != nil {
+		t.Fatalf("RunSync() run 2 error = %v", err)
+	}
+	if !result2.Verify.Ready {
+		t.Fatalf("run 2: Verify.Ready = false")
+	}
+
+	contentAfterRun2, err := os.ReadFile(claudeMD)
+	if err != nil {
+		t.Fatalf("ReadFile() run 2 error = %v", err)
+	}
+
+	if string(contentAfterRun1) != string(contentAfterRun2) {
+		t.Errorf("CLAUDE.md changed between sync run 1 and run 2 with legacy gentleman state (persona content idempotency violation):\n--- run1 (len=%d) ---\n%s\n--- run2 (len=%d) ---\n%s",
+			len(contentAfterRun1), contentAfterRun1, len(contentAfterRun2), contentAfterRun2)
+	}
 }

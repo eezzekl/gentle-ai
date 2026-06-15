@@ -1273,31 +1273,76 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-// applyResolvedPersona fills selection.Persona when it was not explicitly set.
-// It accepts the already-loaded persisted persona string (from state.json)
-// so no disk I/O happens inside this function.
+// persistedSyncState holds the persona-related fields read from state.json.
+// Grouping them avoids a long parameter list and makes the migration matrix
+// easier to test in isolation.
+type persistedSyncState struct {
+	persona            string
+	region             string
+	artifactsInEnglish bool
+}
+
+// applyResolvedPersona fills selection.Persona, selection.Region and
+// selection.ArtifactsInEnglish when they were not explicitly set by the caller.
+// It accepts a persistedSyncState loaded from state.json so no disk I/O
+// happens inside this function.
 //
-// Resolution order:
-//  1. Explicit: if selection.Persona is non-empty, it is left untouched.
-//  2. Persisted: the persisted string is normalized via normalizePersona;
-//     on error (unknown/misspelled value) the fallback is used instead.
-//  3. Fallback: PersonaNeutral for default-safe behavior when persisted state is
-//     missing, empty, unreadable, or invalid.
-func applyResolvedPersona(selection *model.Selection, persisted string) {
+// Migration matrix (applied when state.persona is a legacy alias or empty):
+//
+//	| persisted persona         | resolved persona | region       | artifactsInEnglish |
+//	|---------------------------|------------------|--------------|-------------------|
+//	| "gentleman"               | gentle           | argentina    | true              |
+//	| "gentleman-neutral-artifacts" | gentle       | argentina    | true              |
+//	| "neutral"                 | neutral          | user-language| true              |
+//	| "custom"                  | custom           | (none)       | (unchanged)       |
+//	| "" / absent               | gentle           | argentina    | true              |
+//	| "gentle" (already migrated) | gentle         | (from state) | (from state)      |
+//
+// ArtifactsInEnglish is set to true EXPLICITLY in every non-custom legacy branch.
+// We never rely on the Go zero-value false — that is the silent-degrade trap for
+// users whose old state.json has no artifactsInEnglish field.
+//
+// For already-migrated state (persona == "gentle"/"neutral"/"custom") the
+// Region and ArtifactsInEnglish are read directly from the persisted values,
+// allowing the second sync to skip the legacy alias path entirely.
+func applyResolvedPersona(selection *model.Selection, persisted persistedSyncState) {
 	if selection.Persona != "" {
+		// Explicit persona set by caller (e.g. --persona flag) — do not overwrite.
 		return
 	}
-	if persisted != "" {
-		if id, err := normalizePersona(persisted); err == nil {
-			selection.Persona = id
-			return
+
+	switch model.PersonaID(persisted.persona) {
+	case model.PersonaGentleman, model.PersonaGentlemanNeutralArtifacts:
+		// Legacy aliases: both converge to gentle+argentina (proving hybrid was no-op).
+		selection.Persona = model.PersonaGentle
+		selection.Region = string(model.RegionArgentina)
+		selection.ArtifactsInEnglish = true
+
+	case model.PersonaNeutral:
+		selection.Persona = model.PersonaNeutral
+		selection.Region = string(model.RegionUserLanguage)
+		selection.ArtifactsInEnglish = true
+
+	case model.PersonaCustom:
+		selection.Persona = model.PersonaCustom
+		// Custom: no region, no injection — leave ArtifactsInEnglish as caller set it.
+
+	case model.PersonaGentle:
+		// Already migrated: read region and artifactsInEnglish directly from state.
+		selection.Persona = model.PersonaGentle
+		selection.Region = persisted.region
+		selection.ArtifactsInEnglish = persisted.artifactsInEnglish
+
+	default:
+		if persisted.persona != "" {
+			// Unknown/misspelled persisted value — fall through to safe defaults.
 		}
-		// Unknown/misspelled persisted value — fall through to neutral.
+		// Default-safe fallback: empty or unreadable state. Migrates to
+		// gentle+argentina+true so new users get today's behavior.
+		selection.Persona = model.PersonaGentle
+		selection.Region = string(model.RegionArgentina)
+		selection.ArtifactsInEnglish = true
 	}
-	// Default-safe fallback: state files written before persona persistence have
-	// no Persona field, and unreadable/invalid state must not implicitly restore
-	// regional persona behavior.
-	selection.Persona = model.PersonaNeutral
 }
 
 // RunSyncWithSelection is the programmatic entry point for sync.
@@ -1309,15 +1354,23 @@ func RunSyncWithSelection(homeDir string, selection model.Selection) (SyncResult
 	persistedState, persistedStateErr := state.Read(homeDir)
 	restorePersistedCommunityTools(homeDir, &selection, persistedState)
 
-	// Resolve persona from persisted state when the caller has not provided one.
-	// RunSync already resolves persona before delegating here, so on the CLI path
-	// selection.Persona is already set and applyResolvedPersona early-returns with
-	// no disk read. On the TUI path the Selection has an empty Persona field, so
-	// we read state once here and apply the persisted value (or neutral fallback).
+	// Resolve persona, region, and artifactsInEnglish from persisted state when
+	// the caller has not provided a Persona. RunSync already resolves these before
+	// delegating here, so on the CLI path selection.Persona is already set and
+	// applyResolvedPersona early-returns with no disk read. On the TUI path the
+	// Selection has an empty Persona field, so we read state once here and apply
+	// the persisted values (or safe defaults when state is absent).
 	if selection.Persona == "" {
-		var persistedPersona string
-		persistedPersona = persistedState.Persona
-		applyResolvedPersona(&selection, persistedPersona)
+		// Reuse the state already read above instead of reading disk twice.
+		var ps persistedSyncState
+		if persistedStateErr == nil {
+			ps = persistedSyncState{
+				persona:            persistedState.Persona,
+				region:             persistedState.Region,
+				artifactsInEnglish: persistedState.ArtifactsInEnglish,
+			}
+		}
+		applyResolvedPersona(&selection, ps)
 	}
 
 	result := SyncResult{
@@ -1489,11 +1542,15 @@ func RunSync(args []string) (SyncResult, error) {
 		selection.CodexPhaseModelAssignments = m
 	}
 
-	// Resolve persona from the already-read state. This covers both the dry-run
-	// branch (which returns early) and the normal path (which delegates to
-	// RunSyncWithSelection — that function's early-return guard prevents a second
-	// disk read on the CLI path).
-	applyResolvedPersona(&selection, persistedState.Persona)
+	// Resolve persona, region, and artifactsInEnglish from the already-read state.
+	// This covers both the dry-run branch (which returns early) and the normal
+	// path (which delegates to RunSyncWithSelection — that function's early-return
+	// guard prevents a second disk read on the CLI path).
+	applyResolvedPersona(&selection, persistedSyncState{
+		persona:            persistedState.Persona,
+		region:             persistedState.Region,
+		artifactsInEnglish: persistedState.ArtifactsInEnglish,
+	})
 
 	if flags.DryRun {
 		// Build the plan for inspection, skip execution.

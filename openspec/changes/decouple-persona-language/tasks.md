@@ -94,7 +94,7 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 **Satisfies**: R1 (back-compat migration, MANDATORY), R2 (sync idempotency), R6 (persistence of new fields)
 
 ### WU-4.1 — Test: migration matrix + idempotency
-- [ ] In `internal/cli/sync_test.go` (extend): write table-driven test for `applyResolvedPersona` covering all 5 migration matrix rows:
+- [x] In `internal/cli/sync_test.go` (extend): write table-driven test for `applyResolvedPersona` covering all 5 migration matrix rows:
 
   | old persona string | expected style | expected region | expected artifactsInEnglish |
   |---|---|---|---|
@@ -108,15 +108,15 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
   - Explicit assertion: `artifactsInEnglish` is `true` (not Go zero-value `false`) for every non-custom row.
   - Note: `neutral` migrates to `user-language` — acceptance-note confirmed here.
 
-- [ ] Write idempotency test for `RunSyncWithSelection`: inject twice, assert resulting content byte-identical on second run.
-- [ ] Run `go test ./internal/cli/...` — expect RED.
+- [x] Write idempotency test for `RunSyncWithSelection`: inject twice, assert resulting content byte-identical on second run.
+- [x] Run `go test ./internal/cli/...` — expect RED.
 
 ### WU-4.2 — Implement: migrate + sync selection
-- [ ] In `internal/cli/sync.go`:
+- [x] In `internal/cli/sync.go`:
   - Update `applyResolvedPersona` signature to populate `Selection.Region` and `Selection.ArtifactsInEnglish` from the persisted `InstallState` (pass `InstallState` instead of bare string, or use a helper that extracts both fields).
   - Implement the full migration matrix: for each legacy `persona` string, set `selection.Persona`, `selection.Region`, and `selection.ArtifactsInEnglish` explicitly. **Never rely on bool zero-value**; set `true` explicitly in each non-custom branch.
   - Update `BuildSyncSelection` to read `state.Region` and `state.ArtifactsInEnglish` from the persisted `InstallState` and write them into the `Selection`.
-- [ ] Run `go test ./internal/cli/...` — expect GREEN.
+- [x] Run `go test ./internal/cli/...` — expect GREEN.
 
 **Acceptance notes**:
 - `neutral` style → region `user-language` ("Idioma del usuario") — per migration constraint #1118.
@@ -130,7 +130,7 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 **Satisfies**: R4 (region-neutral base), R9 (Claude/generic assets)
 
 ### WU-5.1 — Test: `stripLanguageSection` transform + asset guard
-- [ ] In `internal/components/persona/inject_test.go` (extend) or new `strip_test.go`:
+- [x] In `internal/components/persona/inject_test.go` (extend) or new `strip_test.go`:
   - Pure-function test for `stripLanguageSection(content string) string`:
     - Input: the full text of `claude/persona-gentleman.md` (embed or inline snippet).
     - Assert: the `## Language` section (lines 37–43) is removed.
@@ -139,19 +139,19 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
   - Same test for `claude/output-style-gentleman.md`: `## Language Rules` section removed; `## Persona Scope`, `## Tone`, `## Philosophy`, `## Behavior` survive.
   - Same test for `generic/persona-gentleman.md`: `## Language` section removed; all other sections survive.
   - Asset guard: after stripping, the gentle base asset must NOT contain "Rioplatense" or "voseo" as a baked-in instruction.
-- [ ] Run `go test ./internal/components/persona/...` — expect RED.
+- [x] Run `go test ./internal/components/persona/...` — expect RED.
 
 ### WU-5.2 — Implement: `stripLanguageSection` function
-- [ ] In `internal/components/persona/inject.go`: implement `stripLanguageSection(content string) string`.
+- [x] In `internal/components/persona/strip.go` (new file): implement `stripLanguageSection(content string) string`.
   - Logic: find the `## Language` or `## Language Rules` H2 header (case-sensitive match on both forms); remove from that line through the next `##`-prefixed line (exclusive) or EOF.
   - This is a pure string transform — no file I/O.
-- [ ] Run `go test ./internal/components/persona/...` — confirm strip tests GREEN.
+- [x] Run `go test ./internal/components/persona/...` — confirm strip tests GREEN.
 
 ### WU-5.3 — Strip asset files
-- [ ] Edit `internal/assets/claude/persona-gentleman.md`: remove the `## Language` section (lines ~37–43).
-- [ ] Edit `internal/assets/claude/output-style-gentleman.md`: remove the `## Language Rules` section (lines ~40–48). Keep `## Persona Scope`.
-- [ ] Edit `internal/assets/generic/persona-gentleman.md`: remove its `## Language` section (locate equivalent block).
-- [ ] Run `go test ./internal/components/persona/...` — asset guard tests GREEN.
+- [x] Edit `internal/assets/claude/persona-gentleman.md`: remove the `## Language` section (lines ~37–43).
+- [x] Edit `internal/assets/claude/output-style-gentleman.md`: remove the `## Language Rules` section (lines ~40–48). Keep `## Persona Scope`.
+- [x] Edit `internal/assets/generic/persona-gentleman.md`: remove its `## Language` section (locate equivalent block).
+- [x] Run `go test ./internal/components/persona/...` — asset guard tests GREEN.
 
 **Acceptance**: After stripping, no baked-in Rioplatense/voseo instruction remains in any of the three Claude/generic asset files. The strip is header-bounded: only the `## Language` / `## Language Rules` section is removed.
 
