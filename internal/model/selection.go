@@ -22,6 +22,18 @@ type Selection struct {
 	Profiles                         []Profile                        // named SDD profiles to generate/update during sync
 	OpenCodePlugins                  []OpenCodeCommunityPluginID      // optional community OpenCode TUI plugins
 	CommunityTools                   []CommunityToolID                // optional cross-agent community tools/plugins
+
+	// Region is the selected language/region for persona voice injection.
+	// Curated values correspond to RegionID constants (e.g. "argentina", "mexico").
+	// A free-text string is accepted for custom regions. Empty means "follow user".
+	Region string
+
+	// ArtifactsInEnglish controls whether generated artifacts (code, comments,
+	// identifiers, UI copy) are produced in English regardless of the
+	// conversational language. Default is false; callers that want today's
+	// behavior (English artifacts) MUST set this to true explicitly — never
+	// rely on the Go zero value.
+	ArtifactsInEnglish bool
 }
 
 func (s Selection) HasCommunityTool(tool CommunityToolID) bool {

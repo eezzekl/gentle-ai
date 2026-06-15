@@ -92,11 +92,46 @@ const (
 type PersonaID string
 
 const (
-	PersonaGentleman                 PersonaID = "gentleman"
+	// PersonaGentle is the primary persona (warm, rioplatense mentor style).
+	// Region and artifact language are set independently via RegionID and
+	// ArtifactsInEnglish rather than being baked into the persona ID.
+	PersonaGentle    PersonaID = "gentle"
+	PersonaGentleman PersonaID = "gentleman" // back-compat alias → PersonaGentle
+
+	// PersonaGentlemanNeutralArtifacts is kept as a compile-time constant so
+	// existing callers do not break. It is no longer a first-class selectable
+	// persona; normalizePersona maps it to PersonaGentle.
+	// removed; use PersonaGentle + migration alias in validate.go
 	PersonaGentlemanNeutralArtifacts PersonaID = "gentleman-neutral-artifacts"
-	PersonaNeutral                   PersonaID = "neutral"
-	PersonaCustom                    PersonaID = "custom"
+
+	PersonaNeutral PersonaID = "neutral"
+	PersonaCustom  PersonaID = "custom"
 )
+
+// RegionID identifies a language/region for persona voice injection.
+// Curated IDs map to display labels in RegionMap; unrecognized IDs are treated
+// as free-text and injected verbatim into the language directive.
+type RegionID string
+
+const (
+	RegionArgentina  RegionID = "argentina"
+	RegionMexico     RegionID = "mexico"
+	RegionColombia   RegionID = "colombia"
+	RegionSpain      RegionID = "spain"
+	RegionChile      RegionID = "chile"
+	RegionUserLanguage RegionID = "user-language" // follow the language the user writes in
+)
+
+// RegionMap maps curated RegionIDs to their Spanish gentilicio-first display labels.
+// TUI uses these labels for the region radio list.
+var RegionMap = map[RegionID]string{
+	RegionArgentina:    "Argentino (rioplatense, voseo)",
+	RegionMexico:       "Mexicano (tuteo)",
+	RegionColombia:     "Colombiano (paisa)",
+	RegionSpain:        "Español (España)",
+	RegionChile:        "Chileno",
+	RegionUserLanguage: "Idioma del usuario",
+}
 
 // SystemPromptStrategy defines how an agent's system prompt file is managed.
 type SystemPromptStrategy int

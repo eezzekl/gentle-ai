@@ -990,6 +990,135 @@ func TestMergeAgents_PreservesRDDMode(t *testing.T) {
 	}
 }
 
+// ─── WU-2 RED: Region + ArtifactsInEnglish fields in InstallState ───────────
+
+// TestInstallStateRegionAndArtifactsInEnglishRoundTrip verifies that the new
+// Region (with omitempty) and ArtifactsInEnglish (NO omitempty) fields survive
+// a Write/Read round-trip with the expected JSON behavior.
+func TestInstallStateRegionAndArtifactsInEnglishRoundTrip(t *testing.T) {
+	tests := []struct {
+		name               string
+		region             string
+		artifactsInEnglish bool
+		wantRegionInJSON   bool   // true = "region" key must appear in JSON
+		wantArtifactsJSON  string // exact JSON fragment that must appear
+	}{
+		{
+			name:               "chile region with artifacts-in-english=false",
+			region:             "chile",
+			artifactsInEnglish: false,
+			wantRegionInJSON:   true,
+			wantArtifactsJSON:  `"artifactsInEnglish": false`,
+		},
+		{
+			name:               "empty region omitted from JSON",
+			region:             "",
+			artifactsInEnglish: true,
+			wantRegionInJSON:   false,
+			wantArtifactsJSON:  `"artifactsInEnglish": true`,
+		},
+		{
+			name:               "argentina region with artifacts-in-english=true",
+			region:             "argentina",
+			artifactsInEnglish: true,
+			wantRegionInJSON:   true,
+			wantArtifactsJSON:  `"artifactsInEnglish": true`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			s := InstallState{
+				InstalledAgents:    []string{"claude-code"},
+				Region:             tt.region,
+				ArtifactsInEnglish: tt.artifactsInEnglish,
+			}
+
+			if err := Write(home, s); err != nil {
+				t.Fatalf("Write() error = %v", err)
+			}
+
+			// Read back and verify field values.
+			got, err := Read(home)
+			if err != nil {
+				t.Fatalf("Read() error = %v", err)
+			}
+			if got.Region != tt.region {
+				t.Errorf("Region = %q, want %q", got.Region, tt.region)
+			}
+			if got.ArtifactsInEnglish != tt.artifactsInEnglish {
+				t.Errorf("ArtifactsInEnglish = %v, want %v", got.ArtifactsInEnglish, tt.artifactsInEnglish)
+			}
+
+			// Verify JSON shape.
+			data, err := os.ReadFile(Path(home))
+			if err != nil {
+				t.Fatalf("ReadFile() error = %v", err)
+			}
+			jsonStr := string(data)
+
+			if tt.wantRegionInJSON && !contains(jsonStr, `"region"`) {
+				t.Errorf("JSON missing %q key; got:\n%s", "region", jsonStr)
+			}
+			if !tt.wantRegionInJSON && contains(jsonStr, `"region"`) {
+				t.Errorf("JSON must not contain %q when region is empty; got:\n%s", "region", jsonStr)
+			}
+
+			// ArtifactsInEnglish must always be present in JSON (no omitempty).
+			if !contains(jsonStr, tt.wantArtifactsJSON) {
+				t.Errorf("JSON missing %q; got:\n%s", tt.wantArtifactsJSON, jsonStr)
+			}
+		})
+	}
+}
+
+// TestArtifactsInEnglishFalseNotOmitted verifies the critical constraint:
+// ArtifactsInEnglish=false must NOT be omitted from JSON. Without this, an old
+// state.json without the field would deserialize as false (Go zero value), which
+// is correct — but a state.json that EXPLICITLY set false must also round-trip
+// as false after write+read, not disappear.
+func TestArtifactsInEnglishFalseNotOmitted(t *testing.T) {
+	home := t.TempDir()
+	s := InstallState{
+		InstalledAgents:    []string{"claude-code"},
+		ArtifactsInEnglish: false,
+	}
+	if err := Write(home, s); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+
+	data, err := os.ReadFile(Path(home))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	if !contains(string(data), `"artifactsInEnglish": false`) {
+		t.Errorf("JSON must contain artifactsInEnglish: false (no omitempty); got:\n%s", data)
+	}
+}
+
+// TestMergeAgentsPreservesRegionAndArtifacts verifies that MergeAgents carries
+// Region and ArtifactsInEnglish from the existing state unchanged.
+func TestMergeAgentsPreservesRegionAndArtifacts(t *testing.T) {
+	existing := InstallState{
+		InstalledAgents:    []string{"claude-code"},
+		Persona:            "gentle",
+		Region:             "argentina",
+		ArtifactsInEnglish: true,
+	}
+	merged := MergeAgents(existing, []string{"opencode"})
+
+	if merged.Region != existing.Region {
+		t.Errorf("MergeAgents did not preserve Region: got %q, want %q",
+			merged.Region, existing.Region)
+	}
+	if merged.ArtifactsInEnglish != existing.ArtifactsInEnglish {
+		t.Errorf("MergeAgents did not preserve ArtifactsInEnglish: got %v, want %v",
+			merged.ArtifactsInEnglish, existing.ArtifactsInEnglish)
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && findSub(s, substr)
 }

@@ -4,6 +4,30 @@ import (
 	"testing"
 )
 
+// TestSelectionHasRegionAndArtifactsInEnglish verifies that Selection has the
+// new Region and ArtifactsInEnglish fields for the language/region axis.
+func TestSelectionHasRegionAndArtifactsInEnglish(t *testing.T) {
+	s := Selection{}
+
+	// Region defaults to empty string.
+	if s.Region != "" {
+		t.Fatalf("Selection.Region default = %q, want empty", s.Region)
+	}
+	s.Region = string(RegionArgentina)
+	if s.Region != "argentina" {
+		t.Fatalf("Selection.Region set to %q but read back as %q", "argentina", s.Region)
+	}
+
+	// ArtifactsInEnglish defaults to false (Go zero value).
+	if s.ArtifactsInEnglish {
+		t.Fatal("Selection.ArtifactsInEnglish default = true, want false")
+	}
+	s.ArtifactsInEnglish = true
+	if !s.ArtifactsInEnglish {
+		t.Fatal("Selection.ArtifactsInEnglish set to true but read back as false")
+	}
+}
+
 // TestSelectionHasStrictTDDField verifies that the Selection struct has a
 // StrictTDD bool field.
 func TestSelectionHasStrictTDDField(t *testing.T) {

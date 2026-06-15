@@ -79,12 +79,21 @@ func NormalizeInstallFlags(flags InstallFlags, detection system.DetectionResult)
 
 func normalizePersona(value string) (model.PersonaID, error) {
 	if strings.TrimSpace(value) == "" {
-		return model.PersonaGentleman, nil
+		return model.PersonaGentle, nil
 	}
 
 	switch model.PersonaID(value) {
-	case model.PersonaGentleman, model.PersonaGentlemanNeutralArtifacts, model.PersonaNeutral, model.PersonaCustom:
-		return model.PersonaID(value), nil
+	case model.PersonaGentle:
+		return model.PersonaGentle, nil
+	case model.PersonaGentleman, model.PersonaGentlemanNeutralArtifacts:
+		// Back-compat aliases: both map to PersonaGentle.
+		// gentleman-neutral-artifacts was always a no-op variant of gentleman;
+		// migration convergence is intentional (see design §migration matrix).
+		return model.PersonaGentle, nil
+	case model.PersonaNeutral:
+		return model.PersonaNeutral, nil
+	case model.PersonaCustom:
+		return model.PersonaCustom, nil
 	default:
 		return "", fmt.Errorf("unsupported persona %q", value)
 	}

@@ -129,6 +129,18 @@ type InstallState struct {
 	// recorded is authority, not a cosmetic audit field. Nil for state files
 	// written before the switch existed.
 	RDDModeRecordedAt *time.Time `json:"rdd_mode_recorded_at,omitempty"`
+
+	// Region is the language/region ID selected during install (e.g. "argentina",
+	// "mexico", "user-language"). Persisted so that sync regenerates the same
+	// language directive without asking the user again.
+	// Empty = follow the user's language (omitted from JSON when empty).
+	Region string `json:"region,omitempty"`
+
+	// ArtifactsInEnglish controls whether generated artifacts stay in English
+	// regardless of the conversational language. Persisted with NO omitempty
+	// so that false is written explicitly — omitting the field would make it
+	// indistinguishable from a pre-feature state file (ambiguous zero value).
+	ArtifactsInEnglish bool `json:"artifactsInEnglish"`
 }
 
 // Path returns the absolute path to the state file for the given home directory.
@@ -215,6 +227,8 @@ func MergeAgents(existing InstallState, newAgents []string) InstallState {
 		PendingSync:                 existing.PendingSync,
 		RDDMode:                     existing.RDDMode,
 		RDDModeRecordedAt:           existing.RDDModeRecordedAt,
+		Region:                      existing.Region,
+		ArtifactsInEnglish:          existing.ArtifactsInEnglish,
 	}
 }
 
