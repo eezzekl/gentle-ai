@@ -28,7 +28,7 @@ func TestOpenClawSelectedAdapterRoutesToExpectedInjectors(t *testing.T) {
 	if _, err := sdd.Inject(workspace, adapter, model.SDDModeSingle, sdd.InjectOptions{StrictTDD: true, WorkspaceDir: workspace}); err != nil {
 		t.Fatalf("sdd.Inject(openclaw) error = %v", err)
 	}
-	if _, err := persona.Inject(workspace, adapter, model.PersonaGentleman); err != nil {
+	if _, err := persona.Inject(workspace, adapter, model.PersonaGentleman, model.RegionArgentina, true); err != nil {
 		t.Fatalf("persona.Inject(openclaw) error = %v", err)
 	}
 
@@ -106,7 +106,7 @@ func runOpenClawInjectorChain(t *testing.T, home, workspace string, adapter agen
 	if _, err := sdd.Inject(workspace, adapter, model.SDDModeSingle, sdd.InjectOptions{StrictTDD: true, WorkspaceDir: workspace}); err != nil {
 		t.Fatalf("sdd.Inject(openclaw) error = %v", err)
 	}
-	if _, err := persona.Inject(workspace, adapter, model.PersonaGentleman); err != nil {
+	if _, err := persona.Inject(workspace, adapter, model.PersonaGentleman, model.RegionArgentina, true); err != nil {
 		t.Fatalf("persona.Inject(openclaw) error = %v", err)
 	}
 }

@@ -71,6 +71,12 @@ The `<available_skills>` block in your system prompt is authoritative — it lis
 **Self-check BEFORE every response**: does this request match any skill in `<available_skills>`? If yes, read the matching SKILL.md (using your agent's read mechanism) BEFORE generating your reply. This is a blocking requirement, not optional context. Skipping it is a discipline failure.
 
 Multiple skills can apply at once. Match by file context (extensions, paths) and task context (what the user is asking for).
+
+## Reply Language and Region
+
+Reply in Rioplatense Spanish (voseo, Argentine idioms). Use voseo forms (vos, tus, etc.) naturally throughout your replies.
+
+All generated artifacts (code, comments, identifiers, UI copy, commit messages, documentation) must be in English, regardless of the conversational language.
 <!-- /gentle-ai:persona -->
 
 <!-- gentle-ai:sdd-orchestrator -->

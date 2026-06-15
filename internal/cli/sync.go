@@ -1025,7 +1025,7 @@ func (s componentSyncStep) Run() error {
 		// remains an install-only concern.
 		for _, adapter := range adapters {
 			targetDir := componentInjectionDir(s.homeDir, s.workspaceDir, adapter)
-			res, err := persona.InjectForSync(targetDir, adapter, s.selection.Persona)
+			res, err := persona.InjectForSync(targetDir, adapter, s.selection.Persona, model.RegionID(s.selection.Region), s.selection.ArtifactsInEnglish)
 			if err != nil {
 				return fmt.Errorf("sync persona for %q: %w", adapter.Agent(), err)
 			}

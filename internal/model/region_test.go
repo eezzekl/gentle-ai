@@ -90,13 +90,13 @@ func TestComposeLanguageDirectiveCuratedRegions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := composeLanguageDirective(tt.region, tt.artifactsInEnglish)
+			got := ComposeLanguageDirective(tt.region, tt.artifactsInEnglish)
 			if !strings.Contains(got, tt.wantLangPhrase) {
-				t.Errorf("composeLanguageDirective(%q, %v) = %q\nwant string containing %q",
+				t.Errorf("ComposeLanguageDirective(%q, %v) = %q\nwant string containing %q",
 					tt.region, tt.artifactsInEnglish, got, tt.wantLangPhrase)
 			}
 			if !strings.Contains(got, tt.wantArtifactPhrase) {
-				t.Errorf("composeLanguageDirective(%q, %v) = %q\nwant string containing %q",
+				t.Errorf("ComposeLanguageDirective(%q, %v) = %q\nwant string containing %q",
 					tt.region, tt.artifactsInEnglish, got, tt.wantArtifactPhrase)
 			}
 		})
@@ -106,7 +106,7 @@ func TestComposeLanguageDirectiveCuratedRegions(t *testing.T) {
 // TestComposeLanguageDirectiveUserLanguage verifies the user-language sentinel
 // produces a follow-user directive with no forced region name.
 func TestComposeLanguageDirectiveUserLanguage(t *testing.T) {
-	got := composeLanguageDirective(RegionUserLanguage, true)
+	got := ComposeLanguageDirective(RegionUserLanguage, true)
 
 	// Must contain follow-user phrasing.
 	if !strings.Contains(got, "language the user") {
@@ -128,7 +128,7 @@ func TestComposeLanguageDirectiveUserLanguage(t *testing.T) {
 // is injected verbatim into the directive.
 func TestComposeLanguageDirectiveFreeText(t *testing.T) {
 	freeText := RegionID("yucateco")
-	got := composeLanguageDirective(freeText, true)
+	got := ComposeLanguageDirective(freeText, true)
 
 	if !strings.Contains(got, "yucateco") {
 		t.Errorf("free-text region not injected verbatim; got %q", got)
@@ -141,8 +141,8 @@ func TestComposeLanguageDirectiveFreeText(t *testing.T) {
 // TestComposeLanguageDirectiveArtifactsClauseDiffers verifies that
 // artifactsInEnglish=true and artifactsInEnglish=false produce distinct directives.
 func TestComposeLanguageDirectiveArtifactsClauseDiffers(t *testing.T) {
-	english := composeLanguageDirective(RegionArgentina, true)
-	inLang := composeLanguageDirective(RegionArgentina, false)
+	english := ComposeLanguageDirective(RegionArgentina, true)
+	inLang := ComposeLanguageDirective(RegionArgentina, false)
 
 	if english == inLang {
 		t.Errorf("artifactsInEnglish=true and =false produced identical directives:\n%q", english)
@@ -153,7 +153,7 @@ func TestComposeLanguageDirectiveArtifactsClauseDiffers(t *testing.T) {
 // argentina+artifactsInEnglish=true directive reproduces today's gentleman language
 // behavior: Rioplatense/voseo + English artifacts.
 func TestComposeLanguageDirectiveArgentinaTrueMatchesProdText(t *testing.T) {
-	got := composeLanguageDirective(RegionArgentina, true)
+	got := ComposeLanguageDirective(RegionArgentina, true)
 
 	// The directive must communicate both the Rioplatense/voseo style and
 	// the requirement that code artifacts stay in English.

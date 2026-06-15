@@ -62,7 +62,7 @@ func assertLanguageGuardrails(t *testing.T, text string, required []string, bann
 func TestInjectClaudeGentlemanWritesSectionWithRealContent(t *testing.T) {
 	home := t.TempDir()
 
-	result, err := Inject(home, claudeAdapter(), model.PersonaGentleman)
+	result, err := Inject(home, claudeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -123,7 +123,7 @@ func TestInjectClaudeGentlemanWritesSectionWithRealContent(t *testing.T) {
 func TestInjectKimiGentlemanIncludesProjectInstructionsAndLoadedSkills(t *testing.T) {
 	home := t.TempDir()
 
-	result, err := Inject(home, kimiAdapter(), model.PersonaGentleman)
+	result, err := Inject(home, kimiAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject(kimi) error = %v", err)
 	}
@@ -195,12 +195,23 @@ func TestInjectKimiGentlemanIncludesProjectInstructionsAndLoadedSkills(t *testin
 			t.Fatalf("Kimi persona.md residual should not contain tone/language content %q", banned)
 		}
 	}
+
+	// The composed regional directive must land in the output-style module, NOT
+	// in this residual — Kimi's reply voice lives there. This is the counterpart
+	// of the "Rioplatense" ban above: the region axis must reach Kimi through the
+	// channel that actually carries voice, or selecting a region does nothing.
+	if !strings.Contains(string(styleContent), "## Reply Language and Region") {
+		t.Fatal("Kimi output-style.md missing the composed regional directive section")
+	}
+	if !strings.Contains(string(styleContent), "Reply in Rioplatense Spanish (voseo, Argentine idioms)") {
+		t.Fatal("Kimi output-style.md missing the composed Argentina reply-voice clause")
+	}
 }
 
 func TestInjectClaudeGentlemanWritesOutputStyleFile(t *testing.T) {
 	home := t.TempDir()
 
-	_, err := Inject(home, claudeAdapter(), model.PersonaGentleman)
+	_, err := Inject(home, claudeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -238,7 +249,7 @@ func TestInjectClaudeGentlemanMergesOutputStyleIntoSettings(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err := Inject(home, claudeAdapter(), model.PersonaGentleman)
+	_, err := Inject(home, claudeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -275,7 +286,7 @@ func TestInjectClaudeGentlemanMergesOutputStyleIntoSettings(t *testing.T) {
 func TestInjectClaudeGentlemanReturnsAllFiles(t *testing.T) {
 	home := t.TempDir()
 
-	result, err := Inject(home, claudeAdapter(), model.PersonaGentleman)
+	result, err := Inject(home, claudeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -303,7 +314,7 @@ func TestInjectClaudeGentlemanReturnsAllFiles(t *testing.T) {
 func TestInjectClaudeNeutralWritesResidualPersonaWithoutRegionalLanguage(t *testing.T) {
 	home := t.TempDir()
 
-	result, err := Inject(home, claudeAdapter(), model.PersonaNeutral)
+	result, err := Inject(home, claudeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -347,7 +358,7 @@ func TestInjectClaudeNeutralWritesNeutralOutputStyleAndSettings(t *testing.T) {
 		t.Fatalf("WriteFile(settings) error = %v", err)
 	}
 
-	result, err := Inject(home, claudeAdapter(), model.PersonaNeutral)
+	result, err := Inject(home, claudeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -399,7 +410,7 @@ func TestInjectClaudeNeutralWritesNeutralOutputStyleAndSettings(t *testing.T) {
 		t.Fatal("settings lost existing permissions key")
 	}
 
-	second, err := Inject(home, claudeAdapter(), model.PersonaNeutral)
+	second, err := Inject(home, claudeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject() second error = %v", err)
 	}
@@ -411,7 +422,7 @@ func TestInjectClaudeNeutralWritesNeutralOutputStyleAndSettings(t *testing.T) {
 func TestInjectCustomClaudeDoesNothing(t *testing.T) {
 	home := t.TempDir()
 
-	result, err := Inject(home, claudeAdapter(), model.PersonaCustom)
+	result, err := Inject(home, claudeAdapter(), model.PersonaCustom, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -432,7 +443,7 @@ func TestInjectCustomClaudeDoesNothing(t *testing.T) {
 func TestInjectCustomOpenCodeDoesNothing(t *testing.T) {
 	home := t.TempDir()
 
-	result, err := Inject(home, opencodeAdapter(), model.PersonaCustom)
+	result, err := Inject(home, opencodeAdapter(), model.PersonaCustom, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -453,7 +464,7 @@ func TestInjectCustomOpenCodeDoesNothing(t *testing.T) {
 func TestInjectOpenCodeGentlemanWritesAgentsFile(t *testing.T) {
 	home := t.TempDir()
 
-	result, err := Inject(home, opencodeAdapter(), model.PersonaGentleman)
+	result, err := Inject(home, opencodeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -486,7 +497,7 @@ func TestInjectAntigravityGentlemanWritesMarkedPersonaSection(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	result, err := Inject(home, antigravityAdapter(), model.PersonaGentleman)
+	result, err := Inject(home, antigravityAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -510,7 +521,7 @@ func TestInjectAntigravityGentlemanWritesMarkedPersonaSection(t *testing.T) {
 		}
 	}
 
-	second, err := Inject(home, antigravityAdapter(), model.PersonaGentleman)
+	second, err := Inject(home, antigravityAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() second error = %v", err)
 	}
@@ -530,7 +541,7 @@ func TestInjectAntigravityGentlemanWritesMarkedPersonaSection(t *testing.T) {
 func TestInjectOpenCodeGentlemanDoesNotCreateSDDConductor(t *testing.T) {
 	home := t.TempDir()
 
-	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman)
+	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -564,7 +575,7 @@ func TestInjectOpenCodePreservesUserContentInsteadOfOverwriting(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman)
+	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -591,7 +602,7 @@ func TestInjectOpenClawWritesPersonaToWorkspaceSoulAndNotAgents(t *testing.T) {
 		t.Fatalf("WriteFile(AGENTS.md) error = %v", err)
 	}
 
-	result, err := Inject(workspace, adapter, model.PersonaGentleman)
+	result, err := Inject(workspace, adapter, model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject(openclaw) error = %v", err)
 	}
@@ -639,14 +650,14 @@ func TestInjectOpenClawSoulPersonaIsIdempotentAndPreservesUserContent(t *testing
 	}
 
 	adapter := openclawAdapter()
-	first, err := Inject(workspace, adapter, model.PersonaGentleman)
+	first, err := Inject(workspace, adapter, model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject(openclaw) first error = %v", err)
 	}
 	if !first.Changed {
 		t.Fatal("Inject(openclaw) first changed = false")
 	}
-	second, err := Inject(workspace, adapter, model.PersonaGentleman)
+	second, err := Inject(workspace, adapter, model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject(openclaw) second error = %v", err)
 	}
@@ -671,7 +682,7 @@ func TestInjectOpenClawRejectsAmbiguousWorkspacePath(t *testing.T) {
 	cwd := t.TempDir()
 	t.Chdir(cwd)
 
-	result, err := Inject("", openclawAdapter(), model.PersonaGentleman)
+	result, err := Inject("", openclawAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err == nil {
 		t.Fatalf("Inject(openclaw, empty workspace) error = nil, want deterministic ambiguity error; result=%+v", result)
 	}
@@ -695,7 +706,7 @@ func TestInjectOpenCodeDoesNotStripLookalikeUserContent(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman)
+	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -729,7 +740,7 @@ func TestInjectOpenCodePreservesUserPrefaceAboveATLBlock(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman)
+	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -764,7 +775,7 @@ func TestInjectOpenCodeReplacesExactLegacyAssetWithoutDuplication(t *testing.T) 
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman)
+	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -801,7 +812,7 @@ func TestInjectOpenCodePreservesUserPrefaceAboveManagedMarkers(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman)
+	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -827,7 +838,7 @@ func TestInjectOpenCodeNeutralPreservesManagedSections(t *testing.T) {
 	home := t.TempDir()
 
 	// First install gentleman persona + simulate SDD/engram sections
-	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman)
+	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject(gentleman) error = %v", err)
 	}
@@ -845,7 +856,7 @@ func TestInjectOpenCodeNeutralPreservesManagedSections(t *testing.T) {
 	}
 
 	// Now switch to neutral persona
-	result, err := Inject(home, opencodeAdapter(), model.PersonaNeutral)
+	result, err := Inject(home, opencodeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(neutral) error = %v", err)
 	}
@@ -884,7 +895,7 @@ func TestInjectOpenCodeNeutralPreservesManagedSections(t *testing.T) {
 func TestInjectKimiNeutralWritesMeaningfulOutputStyle(t *testing.T) {
 	home := t.TempDir()
 
-	result, err := Inject(home, kimiAdapter(), model.PersonaNeutral)
+	result, err := Inject(home, kimiAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(kimi neutral) error = %v", err)
 	}
@@ -931,7 +942,7 @@ func TestInjectForSyncNeutralCleansOnlyGentlemanAgent(t *testing.T) {
 				t.Fatalf("WriteFile(settings) error = %v", err)
 			}
 
-			result, err := InjectForSync(home, tc.adapter, model.PersonaNeutral)
+			result, err := InjectForSync(home, tc.adapter, model.PersonaNeutral, model.RegionUserLanguage, true)
 			if err != nil {
 				t.Fatalf("InjectForSync() error = %v", err)
 			}
@@ -975,7 +986,7 @@ func TestInjectForSyncNeutralToleratesMalformedOpenCodeSettings(t *testing.T) {
 		t.Fatalf("WriteFile(settings) error = %v", err)
 	}
 
-	if _, err := InjectForSync(home, opencodeAdapter(), model.PersonaNeutral); err != nil {
+	if _, err := InjectForSync(home, opencodeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true); err != nil {
 		t.Fatalf("InjectForSync() should tolerate malformed settings, got error: %v", err)
 	}
 	content, err := os.ReadFile(settingsPath)
@@ -995,7 +1006,7 @@ func TestInjectVSCodeNeutralPreservesManagedSections(t *testing.T) {
 		t.Fatalf("NewAdapter(vscode-copilot) error = %v", err)
 	}
 
-	_, err = Inject(home, vscodeAdapter, model.PersonaGentleman)
+	_, err = Inject(home, vscodeAdapter, model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject(gentleman) error = %v", err)
 	}
@@ -1011,7 +1022,7 @@ func TestInjectVSCodeNeutralPreservesManagedSections(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err = Inject(home, vscodeAdapter, model.PersonaNeutral)
+	_, err = Inject(home, vscodeAdapter, model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(neutral) error = %v", err)
 	}
@@ -1055,7 +1066,7 @@ func TestInjectNeutralPreservesWhenMarkerAtByteZero(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err = Inject(home, opencodeAdapter, model.PersonaNeutral)
+	_, err = Inject(home, opencodeAdapter, model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(neutral) error = %v", err)
 	}
@@ -1097,13 +1108,13 @@ func TestInjectNeutralIdempotentWithManagedSections(t *testing.T) {
 	}
 
 	// First neutral inject
-	result1, err := Inject(home, opencodeAdapter, model.PersonaNeutral)
+	result1, err := Inject(home, opencodeAdapter, model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(neutral) first error = %v", err)
 	}
 
 	// Second neutral inject — should be idempotent
-	result2, err := Inject(home, opencodeAdapter, model.PersonaNeutral)
+	result2, err := Inject(home, opencodeAdapter, model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(neutral) second error = %v", err)
 	}
@@ -1133,7 +1144,7 @@ func TestInjectNeutralIdempotentWithManagedSections(t *testing.T) {
 func TestInjectClaudeIsIdempotent(t *testing.T) {
 	home := t.TempDir()
 
-	first, err := Inject(home, claudeAdapter(), model.PersonaGentleman)
+	first, err := Inject(home, claudeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() first error = %v", err)
 	}
@@ -1141,7 +1152,7 @@ func TestInjectClaudeIsIdempotent(t *testing.T) {
 		t.Fatalf("Inject() first changed = false")
 	}
 
-	second, err := Inject(home, claudeAdapter(), model.PersonaGentleman)
+	second, err := Inject(home, claudeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() second error = %v", err)
 	}
@@ -1153,7 +1164,7 @@ func TestInjectClaudeIsIdempotent(t *testing.T) {
 func TestInjectOpenCodeIsIdempotent(t *testing.T) {
 	home := t.TempDir()
 
-	first, err := Inject(home, opencodeAdapter(), model.PersonaGentleman)
+	first, err := Inject(home, opencodeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() first error = %v", err)
 	}
@@ -1161,7 +1172,7 @@ func TestInjectOpenCodeIsIdempotent(t *testing.T) {
 		t.Fatalf("Inject() first changed = false")
 	}
 
-	second, err := Inject(home, opencodeAdapter(), model.PersonaGentleman)
+	second, err := Inject(home, opencodeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() second error = %v", err)
 	}
@@ -1178,7 +1189,7 @@ func TestInjectWindsurfIsIdempotent(t *testing.T) {
 		t.Fatalf("NewAdapter(windsurf) error = %v", err)
 	}
 
-	first, err := Inject(home, windsurfAdapter, model.PersonaGentleman)
+	first, err := Inject(home, windsurfAdapter, model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() first error = %v", err)
 	}
@@ -1192,7 +1203,7 @@ func TestInjectWindsurfIsIdempotent(t *testing.T) {
 		t.Fatalf("ReadFile() after first inject error = %v", err)
 	}
 
-	second, err := Inject(home, windsurfAdapter, model.PersonaGentleman)
+	second, err := Inject(home, windsurfAdapter, model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() second error = %v", err)
 	}
@@ -1218,7 +1229,7 @@ func TestInjectCursorGentlemanWritesRulesFileWithRealContent(t *testing.T) {
 		t.Fatalf("NewAdapter(cursor) error = %v", err)
 	}
 
-	result, injectErr := Inject(home, cursorAdapter, model.PersonaGentleman)
+	result, injectErr := Inject(home, cursorAdapter, model.PersonaGentleman, model.RegionArgentina, true)
 	if injectErr != nil {
 		t.Fatalf("Inject(cursor) error = %v", injectErr)
 	}
@@ -1251,7 +1262,7 @@ func TestInjectGeminiGentlemanWritesSystemPromptWithRealContent(t *testing.T) {
 		t.Fatalf("NewAdapter(gemini-cli) error = %v", err)
 	}
 
-	result, injectErr := Inject(home, geminiAdapter, model.PersonaGentleman)
+	result, injectErr := Inject(home, geminiAdapter, model.PersonaGentleman, model.RegionArgentina, true)
 	if injectErr != nil {
 		t.Fatalf("Inject(gemini) error = %v", injectErr)
 	}
@@ -1296,7 +1307,7 @@ func TestInjectVSCodeGentlemanWritesInstructionsFile(t *testing.T) {
 		t.Fatalf("NewAdapter(vscode-copilot) error = %v", err)
 	}
 
-	result, injectErr := Inject(home, vscodeAdapter, model.PersonaGentleman)
+	result, injectErr := Inject(home, vscodeAdapter, model.PersonaGentleman, model.RegionArgentina, true)
 	if injectErr != nil {
 		t.Fatalf("Inject(vscode) error = %v", injectErr)
 	}
@@ -1359,7 +1370,7 @@ func TestInjectClaudeAutoHealsStaleFreeTextPersona(t *testing.T) {
 		t.Fatalf("WriteFile error = %v", err)
 	}
 
-	result, err := Inject(home, claudeAdapter(), model.PersonaGentleman)
+	result, err := Inject(home, claudeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -1422,7 +1433,7 @@ func TestInjectClaudeAutoHealStalePersonaOnlyFile(t *testing.T) {
 		t.Fatalf("WriteFile error = %v", err)
 	}
 
-	result, err := Inject(home, claudeAdapter(), model.PersonaGentleman)
+	result, err := Inject(home, claudeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -1473,7 +1484,7 @@ func TestInjectClaudeHealDoesNotTouchNonPersonaContent(t *testing.T) {
 		t.Fatalf("WriteFile error = %v", err)
 	}
 
-	result, err := Inject(home, claudeAdapter(), model.PersonaGentleman)
+	result, err := Inject(home, claudeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() error = %v", err)
 	}
@@ -1519,7 +1530,7 @@ func TestInjectVSCodeCleansLegacyGitHubPersonaFile(t *testing.T) {
 		t.Fatalf("NewAdapter(vscode-copilot) error = %v", err)
 	}
 
-	result, injectErr := Inject(home, vscodeAdapter, model.PersonaGentleman)
+	result, injectErr := Inject(home, vscodeAdapter, model.PersonaGentleman, model.RegionArgentina, true)
 	if injectErr != nil {
 		t.Fatalf("Inject(vscode) error = %v", injectErr)
 	}
@@ -1563,7 +1574,7 @@ func TestInjectVSCodePreservesNonPersonaGitHubFile(t *testing.T) {
 		t.Fatalf("NewAdapter(vscode-copilot) error = %v", err)
 	}
 
-	_, injectErr := Inject(home, vscodeAdapter, model.PersonaGentleman)
+	_, injectErr := Inject(home, vscodeAdapter, model.PersonaGentleman, model.RegionArgentina, true)
 	if injectErr != nil {
 		t.Fatalf("Inject(vscode) error = %v", injectErr)
 	}
@@ -1621,7 +1632,7 @@ func TestInjectVSCodeIdempotentAfterHeal(t *testing.T) {
 		t.Fatalf("NewAdapter(vscode-copilot) error = %v", err)
 	}
 
-	first, err := Inject(home, vscodeAdapter, model.PersonaGentleman)
+	first, err := Inject(home, vscodeAdapter, model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() first error = %v", err)
 	}
@@ -1629,7 +1640,7 @@ func TestInjectVSCodeIdempotentAfterHeal(t *testing.T) {
 		t.Fatal("first inject should have changed")
 	}
 
-	second, err := Inject(home, vscodeAdapter, model.PersonaGentleman)
+	second, err := Inject(home, vscodeAdapter, model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject() second error = %v", err)
 	}
@@ -1642,7 +1653,7 @@ func TestInjectClaude_SwitchGentlemanToNeutral_CleansOutputStyle(t *testing.T) {
 	home := t.TempDir()
 
 	// Step 1: install gentleman — creates output-styles/gentleman.md and sets outputStyle in settings.json.
-	_, err := Inject(home, claudeAdapter(), model.PersonaGentleman)
+	_, err := Inject(home, claudeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject(gentleman) error = %v", err)
 	}
@@ -1666,7 +1677,7 @@ func TestInjectClaude_SwitchGentlemanToNeutral_CleansOutputStyle(t *testing.T) {
 	}
 
 	// Step 2: switch to neutral — should clean both residuals.
-	result, err := Inject(home, claudeAdapter(), model.PersonaNeutral)
+	result, err := Inject(home, claudeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(neutral) error = %v", err)
 	}
@@ -1707,7 +1718,7 @@ func TestInjectClaude_NeutralSelectsManagedOutputStyleAndPreservesOtherSettings(
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err := Inject(home, claudeAdapter(), model.PersonaNeutral)
+	_, err := Inject(home, claudeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(neutral) error = %v", err)
 	}
@@ -1734,12 +1745,12 @@ func TestInjectClaude_SwitchGentlemanToNeutral_IsIdempotent(t *testing.T) {
 	home := t.TempDir()
 
 	// Install gentleman, then switch to neutral twice — second switch must be a no-op.
-	_, err := Inject(home, claudeAdapter(), model.PersonaGentleman)
+	_, err := Inject(home, claudeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject(gentleman) error = %v", err)
 	}
 
-	first, err := Inject(home, claudeAdapter(), model.PersonaNeutral)
+	first, err := Inject(home, claudeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(neutral) first error = %v", err)
 	}
@@ -1747,7 +1758,7 @@ func TestInjectClaude_SwitchGentlemanToNeutral_IsIdempotent(t *testing.T) {
 		t.Fatal("first neutral inject after gentleman should report changed")
 	}
 
-	second, err := Inject(home, claudeAdapter(), model.PersonaNeutral)
+	second, err := Inject(home, claudeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(neutral) second error = %v", err)
 	}
@@ -1760,7 +1771,7 @@ func TestInjectOpenCode_SwitchGentlemanToNeutral_CleansAgentOverlay(t *testing.T
 	home := t.TempDir()
 
 	// Step 1: install gentleman — agent.gentleman key must appear in opencode.json.
-	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman)
+	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject(gentleman) error = %v", err)
 	}
@@ -1792,7 +1803,7 @@ func TestInjectOpenCode_SwitchGentlemanToNeutral_CleansAgentOverlay(t *testing.T
 	}
 
 	// Step 2: switch to neutral — agent.gentleman must be removed.
-	result, err := Inject(home, opencodeAdapter(), model.PersonaNeutral)
+	result, err := Inject(home, opencodeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(neutral) error = %v", err)
 	}
@@ -1829,7 +1840,7 @@ func TestInjectOpenCode_SwitchGentlemanToNeutral_CleansAgentOverlay(t *testing.T
 func TestInjectKilocode_SwitchGentlemanToNeutral_CleansAgentOverlay(t *testing.T) {
 	home := t.TempDir()
 
-	_, err := Inject(home, kilocodeAdapter(), model.PersonaGentleman)
+	_, err := Inject(home, kilocodeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject(gentleman) error = %v", err)
 	}
@@ -1840,7 +1851,7 @@ func TestInjectKilocode_SwitchGentlemanToNeutral_CleansAgentOverlay(t *testing.T
 		t.Fatal("precondition: kilo/opencode.json should have gentleman agent after Gentleman install")
 	}
 
-	result, err := Inject(home, kilocodeAdapter(), model.PersonaNeutral)
+	result, err := Inject(home, kilocodeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(neutral) error = %v", err)
 	}
@@ -1860,7 +1871,7 @@ func TestInjectKilocode_SwitchGentlemanToNeutral_CleansAgentOverlay(t *testing.T
 func TestInjectOpenCode_NeutralFresh_IsNoOp(t *testing.T) {
 	home := t.TempDir()
 
-	_, err := Inject(home, opencodeAdapter(), model.PersonaNeutral)
+	_, err := Inject(home, opencodeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(neutral) on fresh install error = %v", err)
 	}
@@ -1877,7 +1888,7 @@ func TestInjectOpenCode_NeutralFresh_IsNoOp(t *testing.T) {
 func TestInjectOpenCode_GentlemanOnly_WritesAgentOverlay(t *testing.T) {
 	home := t.TempDir()
 
-	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman)
+	_, err := Inject(home, opencodeAdapter(), model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject(gentleman) error = %v", err)
 	}
@@ -1904,7 +1915,7 @@ func TestInjectOpenCode_MalformedJSON_DoesNotPanic(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err := Inject(home, opencodeAdapter(), model.PersonaNeutral)
+	_, err := Inject(home, opencodeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(neutral) with malformed JSON must not error, got: %v", err)
 	}
@@ -1922,7 +1933,7 @@ func TestInjectClaude_MalformedJSON_DoesNotPanic(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	_, err := Inject(home, claudeAdapter(), model.PersonaNeutral)
+	_, err := Inject(home, claudeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(neutral) with malformed settings.json must not error, got: %v", err)
 	}
@@ -1931,11 +1942,11 @@ func TestInjectClaude_MalformedJSON_DoesNotPanic(t *testing.T) {
 func TestInjectKimi_SwitchGentlemanToNeutral_NoResidualPersonaContent(t *testing.T) {
 	home := t.TempDir()
 
-	if _, err := Inject(home, kimiAdapter(), model.PersonaGentleman); err != nil {
+	if _, err := Inject(home, kimiAdapter(), model.PersonaGentleman, model.RegionArgentina, true); err != nil {
 		t.Fatalf("Inject(gentleman) error = %v", err)
 	}
 
-	if _, err := Inject(home, kimiAdapter(), model.PersonaNeutral); err != nil {
+	if _, err := Inject(home, kimiAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true); err != nil {
 		t.Fatalf("Inject(neutral) error = %v", err)
 	}
 
@@ -1966,7 +1977,7 @@ func TestInjectKimi_SwitchGentlemanToNeutral_NoResidualPersonaContent(t *testing
 func TestInjectForSync_OpenCodeNeutral_CleansAgentGentleman(t *testing.T) {
 	home := t.TempDir()
 
-	if _, err := Inject(home, opencodeAdapter(), model.PersonaGentleman); err != nil {
+	if _, err := Inject(home, opencodeAdapter(), model.PersonaGentleman, model.RegionArgentina, true); err != nil {
 		t.Fatalf("Inject(gentleman) error = %v", err)
 	}
 
@@ -1979,7 +1990,7 @@ func TestInjectForSync_OpenCodeNeutral_CleansAgentGentleman(t *testing.T) {
 		t.Fatalf("opencode.json missing gentleman agent after install; got:\n%s", string(before))
 	}
 
-	if _, err := InjectForSync(home, opencodeAdapter(), model.PersonaNeutral); err != nil {
+	if _, err := InjectForSync(home, opencodeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true); err != nil {
 		t.Fatalf("InjectForSync(neutral) error = %v", err)
 	}
 
@@ -1995,7 +2006,7 @@ func TestInjectForSync_OpenCodeNeutral_CleansAgentGentleman(t *testing.T) {
 func TestInjectForSync_ClaudeGentlemanToNeutral_CleansOutputStyle(t *testing.T) {
 	home := t.TempDir()
 
-	if _, err := Inject(home, claudeAdapter(), model.PersonaGentleman); err != nil {
+	if _, err := Inject(home, claudeAdapter(), model.PersonaGentleman, model.RegionArgentina, true); err != nil {
 		t.Fatalf("Inject(gentleman) error = %v", err)
 	}
 
@@ -2013,7 +2024,7 @@ func TestInjectForSync_ClaudeGentlemanToNeutral_CleansOutputStyle(t *testing.T) 
 		t.Fatal("settings.json missing outputStyle after install — precondition failed")
 	}
 
-	if _, err := InjectForSync(home, claudeAdapter(), model.PersonaNeutral); err != nil {
+	if _, err := InjectForSync(home, claudeAdapter(), model.PersonaNeutral, model.RegionUserLanguage, true); err != nil {
 		t.Fatalf("InjectForSync(neutral) error = %v", err)
 	}
 
@@ -2051,7 +2062,7 @@ func TestPersonaContentHermesGentleman(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			content := personaContent(model.AgentHermes, tt.persona, false)
+			content := personaContent(model.AgentHermes, tt.persona, false, model.RegionArgentina, true)
 			if content == "" {
 				t.Fatal("personaContent(hermes, gentleman) returned empty string")
 			}
@@ -2076,7 +2087,7 @@ func TestPersonaContentHermesGentleman(t *testing.T) {
 // Hermes-specific neutral asset with the skill-loading block rewritten for
 // Hermes's native skill model.
 func TestPersonaContentHermesNeutral(t *testing.T) {
-	content := personaContent(model.AgentHermes, model.PersonaNeutral, false)
+	content := personaContent(model.AgentHermes, model.PersonaNeutral, false, model.RegionUserLanguage, true)
 	if content == "" {
 		t.Fatal("personaContent(hermes, neutral) returned empty string")
 	}
@@ -2097,7 +2108,7 @@ func TestPersonaContentHermesNeutral(t *testing.T) {
 // TestPersonaContentHermesCustom verifies that PersonaCustom returns empty string
 // for Hermes (no persona injected — user keeps their own config).
 func TestPersonaContentHermesCustom(t *testing.T) {
-	content := personaContent(model.AgentHermes, model.PersonaCustom, false)
+	content := personaContent(model.AgentHermes, model.PersonaCustom, false, model.RegionArgentina, true)
 	if content != "" {
 		t.Fatalf("personaContent(hermes, custom) = %q, want empty string", content)
 	}
@@ -2119,8 +2130,8 @@ func TestPersonaContentHermesCustom(t *testing.T) {
 func TestPersonaContentGentlemanResidualIgnoredForClaudeAndKimi(t *testing.T) {
 	for _, agent := range []model.AgentID{model.AgentClaudeCode, model.AgentKimi} {
 		t.Run(string(agent), func(t *testing.T) {
-			withResidualFalse := personaContent(agent, model.PersonaGentleman, false)
-			withResidualTrue := personaContent(agent, model.PersonaGentleman, true)
+			withResidualFalse := personaContent(agent, model.PersonaGentleman, false, model.RegionArgentina, true)
+			withResidualTrue := personaContent(agent, model.PersonaGentleman, true, model.RegionArgentina, true)
 
 			if withResidualFalse != withResidualTrue {
 				t.Fatalf("personaContent(%q, gentleman, residual=false) != residual=true — Gentleman dispatch for Claude/Kimi is expected to be agent-hardcoded and ignore the residual flag entirely", agent)
@@ -2155,7 +2166,7 @@ func TestPersonaContentNonHermesNeutralUnchanged(t *testing.T) {
 	}
 	for _, agent := range agentIDs {
 		t.Run(string(agent), func(t *testing.T) {
-			got := personaContent(agent, model.PersonaNeutral, false)
+			got := personaContent(agent, model.PersonaNeutral, false, model.RegionUserLanguage, true)
 			if got != genericNeutral {
 				t.Fatalf("personaContent(%q, neutral) is no longer byte-identical to generic/persona-neutral.md — regression", agent)
 			}
@@ -2198,7 +2209,7 @@ func TestPersonaContentResidualDispatchAllAgents(t *testing.T) {
 	for _, agent := range allAgents {
 		t.Run(string(agent)+"/gentleman", func(t *testing.T) {
 			residual := isResidualCapable(agent)
-			content := personaContent(agent, model.PersonaGentleman, residual)
+			content := personaContent(agent, model.PersonaGentleman, residual, model.RegionArgentina, true)
 			if content == "" {
 				t.Fatalf("personaContent(%q, gentleman, residual=%v) returned empty string", agent, residual)
 			}
@@ -2216,7 +2227,7 @@ func TestPersonaContentResidualDispatchAllAgents(t *testing.T) {
 
 		t.Run(string(agent)+"/neutral", func(t *testing.T) {
 			residual := isResidualCapable(agent)
-			content := personaContent(agent, model.PersonaNeutral, residual)
+			content := personaContent(agent, model.PersonaNeutral, residual, model.RegionArgentina, true)
 			if content == "" {
 				t.Fatalf("personaContent(%q, neutral, residual=%v) returned empty string", agent, residual)
 			}
@@ -2908,7 +2919,7 @@ func TestInjectHermesGentlemanWritesSOULMD(t *testing.T) {
 	home := t.TempDir()
 	adapter := hermesAdapter()
 
-	result, err := Inject(home, adapter, model.PersonaGentleman)
+	result, err := Inject(home, adapter, model.PersonaGentleman, model.RegionArgentina, true)
 	if err != nil {
 		t.Fatalf("Inject(hermes, gentleman) error = %v", err)
 	}
@@ -2943,7 +2954,7 @@ func TestInjectHermesNeutralWritesSOULMD(t *testing.T) {
 	home := t.TempDir()
 	adapter := hermesAdapter()
 
-	result, err := Inject(home, adapter, model.PersonaNeutral)
+	result, err := Inject(home, adapter, model.PersonaNeutral, model.RegionUserLanguage, true)
 	if err != nil {
 		t.Fatalf("Inject(hermes, neutral) error = %v", err)
 	}
@@ -2963,6 +2974,231 @@ func TestInjectHermesNeutralWritesSOULMD(t *testing.T) {
 	}
 	if strings.Contains(text, availableSkillsIsAuthoritative) {
 		t.Fatal("SOUL.md contains the generic <available_skills> instruction — generic neutral used instead of Hermes-specific")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// WU-6: inject wiring — language directive composition (slice 2)
+// ---------------------------------------------------------------------------
+
+// TestIsGentlePersonaAcceptsAllFamilyIDs verifies that isGentlePersona returns
+// true for all three gentleman-family persona IDs (gentle, gentleman, gentleman-neutral-artifacts)
+// and false for neutral and custom.
+func TestIsGentlePersonaAcceptsAllFamilyIDs(t *testing.T) {
+	tests := []struct {
+		persona model.PersonaID
+		want    bool
+	}{
+		{model.PersonaGentle, true},
+		{model.PersonaGentleman, true},
+		{model.PersonaGentlemanNeutralArtifacts, true},
+		{model.PersonaNeutral, false},
+		{model.PersonaCustom, false},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.persona), func(t *testing.T) {
+			if got := isGentlePersona(tt.persona); got != tt.want {
+				t.Fatalf("isGentlePersona(%q) = %v, want %v", tt.persona, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPersonaContentGentleAppendsLanguageDirective verifies that personaContent
+// for the gentle persona appends the composed language directive and does NOT
+// contain baked-in Rioplatense/voseo text from the asset.
+func TestPersonaContentGentleAppendsLanguageDirective(t *testing.T) {
+	tests := []struct {
+		name               string
+		agent              model.AgentID
+		region             model.RegionID
+		artifactsInEnglish bool
+		wantDirective      string
+		wantAbsent         string
+	}{
+		// Claude and Kimi are deliberately absent: their reply voice lives in the
+		// output-style channel, so the directive is delivered there instead of in
+		// the persona section. TestInjectClaudeGentleGoldenRoundTrip covers that
+		// half of the routing.
+		{
+			name:               "generic/mexico/artifacts-in-english",
+			agent:              model.AgentGeminiCLI,
+			region:             model.RegionMexico,
+			artifactsInEnglish: true,
+			wantDirective:      "Reply in Mexican Spanish",
+			// The ## Persona Scope section names "Rioplatense" as a prohibition,
+			// which is fine; what must be absent is the reply-voice directive.
+			wantAbsent: "Reply in Rioplatense Spanish",
+		},
+		{
+			name:               "generic/user-language/artifacts-in-english",
+			agent:              model.AgentGeminiCLI,
+			region:             model.RegionUserLanguage,
+			artifactsInEnglish: true,
+			wantDirective:      "Reply in the language the user writes in",
+			wantAbsent:         "Reply in Rioplatense Spanish",
+		},
+		{
+			name:               "kiro/chile/artifacts-in-english",
+			agent:              model.AgentKiroIDE,
+			region:             model.RegionChile,
+			artifactsInEnglish: true,
+			wantDirective:      "Reply in Chilean Spanish",
+			wantAbsent:         "Reply in Rioplatense Spanish",
+		},
+		{
+			name:               "generic/argentina/artifacts-in-english",
+			agent:              model.AgentGeminiCLI,
+			region:             model.RegionArgentina,
+			artifactsInEnglish: true,
+			wantDirective:      "Reply in Rioplatense Spanish (voseo, Argentine idioms)",
+			wantAbsent:         "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := personaContent(tt.agent, model.PersonaGentle, false, tt.region, tt.artifactsInEnglish)
+			if content == "" {
+				t.Fatal("personaContent returned empty string")
+			}
+			// The composed language directive must be present.
+			if !strings.Contains(content, tt.wantDirective) {
+				t.Fatalf("missing directive %q in:\n%s", tt.wantDirective, content)
+			}
+			// The artifacts-in-english clause must be present.
+			if !strings.Contains(content, "All generated artifacts") {
+				t.Fatalf("missing artifacts-in-english clause in:\n%s", content)
+			}
+			// Unwanted directive must be absent.
+			if tt.wantAbsent != "" && strings.Contains(content, tt.wantAbsent) {
+				t.Fatalf("content contains unexpected %q in:\n%s", tt.wantAbsent, content)
+			}
+			// The ## Language section must appear exactly once (no double-injection).
+			if count := strings.Count(content, "## Language\n"); count != 1 {
+				t.Fatalf("## Language appears %d times (want 1); content:\n%s", count, content)
+			}
+		})
+	}
+}
+
+// TestPersonaContentGentleNoDirectiveForCustom verifies that custom persona
+// returns empty string regardless of region+artifactsInEnglish.
+func TestPersonaContentGentleNoDirectiveForCustom(t *testing.T) {
+	content := personaContent(model.AgentClaudeCode, model.PersonaCustom, false, model.RegionArgentina, true)
+	if content != "" {
+		t.Fatalf("personaContent(custom) = %q, want empty string", content)
+	}
+}
+
+// TestInjectClaudeGentleGoldenRoundTrip proves that composing the language
+// directive is deterministic: two consecutive Inject calls with
+// gentle+argentina+artifactsInEnglish=true produce byte-identical output and
+// the second call is a no-op (Changed=false).
+func TestInjectClaudeGentleGoldenRoundTrip(t *testing.T) {
+	home := t.TempDir()
+
+	first, err := Inject(home, claudeAdapter(), model.PersonaGentle, model.RegionArgentina, true)
+	if err != nil {
+		t.Fatalf("Inject() first error = %v", err)
+	}
+	if !first.Changed {
+		t.Fatal("Inject() first changed = false")
+	}
+
+	path := filepath.Join(home, ".claude", "CLAUDE.md")
+	afterFirst, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() after first inject error = %v", err)
+	}
+
+	// Claude's reply voice lives in the output style, so CLAUDE.md must carry the
+	// tooling residual WITHOUT a composed directive, and the output style must
+	// carry the directive exactly once.
+	text := string(afterFirst)
+	if strings.Contains(text, "## Reply Language and Region") {
+		t.Fatal("CLAUDE.md persona residual must not carry the composed directive — it belongs to the output style")
+	}
+
+	stylePath := filepath.Join(home, ".claude", "output-styles", "gentleman.md")
+	styleBytes, err := os.ReadFile(stylePath)
+	if err != nil {
+		t.Fatalf("ReadFile() output style after first inject error = %v", err)
+	}
+	styleText := string(styleBytes)
+	if count := strings.Count(styleText, "## Reply Language and Region\n"); count != 1 {
+		t.Fatalf("## Reply Language and Region count = %d in output style, want 1", count)
+	}
+	if !strings.Contains(styleText, "Reply in Rioplatense Spanish") {
+		t.Fatal("missing Rioplatense directive in output style after first inject")
+	}
+	if !strings.Contains(styleText, "All generated artifacts") {
+		t.Fatal("missing artifacts-in-english clause in output style after first inject")
+	}
+
+	// Second inject must be idempotent.
+	second, err := Inject(home, claudeAdapter(), model.PersonaGentle, model.RegionArgentina, true)
+	if err != nil {
+		t.Fatalf("Inject() second error = %v", err)
+	}
+	if second.Changed {
+		t.Fatal("Inject() second changed = true — not idempotent")
+	}
+
+	afterSecond, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() after second inject error = %v", err)
+	}
+
+	// Byte-identical golden round-trip.
+	if string(afterFirst) != string(afterSecond) {
+		t.Fatalf("content changed between first and second inject (not byte-identical):\nfirst:\n%s\nsecond:\n%s",
+			string(afterFirst), string(afterSecond))
+	}
+
+	// The output style must also be byte-stable and still carry exactly one
+	// composed directive — a second sync must not stack a duplicate section.
+	styleAfterSecond, err := os.ReadFile(stylePath)
+	if err != nil {
+		t.Fatalf("ReadFile() output style after second inject error = %v", err)
+	}
+	if styleText != string(styleAfterSecond) {
+		t.Fatal("output style changed between first and second inject (not byte-identical)")
+	}
+	if count := strings.Count(string(styleAfterSecond), "## Reply Language and Region\n"); count != 1 {
+		t.Fatalf("## Reply Language and Region count = %d after second inject, want 1", count)
+	}
+}
+
+// TestInjectGentleAllAgentPathsCompileAndCompose verifies that all known agent
+// paths produce non-empty content for PersonaGentle and do not panic. This is
+// the safety net ensuring deferred adapters remain compilable.
+func TestInjectGentleAllAgentPathsCompileAndCompose(t *testing.T) {
+	// All agents that personaContent handles — must all produce non-empty results
+	// for PersonaGentle + a region.
+	agents := []model.AgentID{
+		model.AgentClaudeCode,
+		model.AgentOpenCode,
+		model.AgentKilocode,
+		model.AgentKimi,
+		model.AgentKiroIDE,
+		model.AgentHermes,
+		model.AgentGeminiCLI,
+		model.AgentCursor,
+		model.AgentAntigravity,
+		model.AgentWindsurf,
+	}
+
+	for _, agent := range agents {
+		t.Run(string(agent), func(t *testing.T) {
+			content := personaContent(agent, model.PersonaGentle, false, model.RegionArgentina, true)
+			if content == "" {
+				t.Fatalf("personaContent(%q, gentle, argentina, true) returned empty string", agent)
+			}
+			if strings.Count(content, "## Language\n") > 1 {
+				t.Fatalf("personaContent(%q) has duplicate ## Language sections", agent)
+			}
+		})
 	}
 }
 

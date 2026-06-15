@@ -2,10 +2,18 @@ package model
 
 import "fmt"
 
-// composeLanguageDirective returns a language instruction line for inclusion in
-// persona content. It is the single source of truth for all regional voice
-// injection — no per-region asset files exist; this function composes the
-// directive at build time.
+// ComposeLanguageDirective returns a language instruction section for inclusion
+// in the channel that carries an agent's reply voice. It is the single source of
+// truth for all regional voice injection — no per-region asset files exist; this
+// function composes the directive at build time.
+//
+// The section is headed "## Reply Language and Region" rather than "## Language"
+// on purpose: the shipped assets keep their own "## Language" / "## Language
+// Rules" sections, which hold the REGION-AGNOSTIC contract (anchoring the reply
+// language to the latest user request, no drift, no code-switching). Reusing that
+// header would emit two identically named H2 sections into one document. The two
+// are complementary — the static section says HOW to follow the user's language,
+// this one says WHICH regional voice to use.
 //
 // Region behavior:
 //   - Curated region IDs (argentina, mexico, colombia, spain, chile) →
@@ -16,10 +24,10 @@ import "fmt"
 // ArtifactsInEnglish:
 //   - true  → "All generated artifacts (code, comments, identifiers) in English."
 //   - false → "Generated artifacts may be in the selected language."
-func composeLanguageDirective(region RegionID, artifactsInEnglish bool) string {
+func ComposeLanguageDirective(region RegionID, artifactsInEnglish bool) string {
 	langClause := composeLanguageClause(region)
 	artifactsClause := composeArtifactsClause(artifactsInEnglish)
-	return fmt.Sprintf("## Language\n\n%s\n\n%s", langClause, artifactsClause)
+	return fmt.Sprintf("## Reply Language and Region\n\n%s\n\n%s", langClause, artifactsClause)
 }
 
 // composeLanguageClause builds the reply-language portion of the directive.

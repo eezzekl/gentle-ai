@@ -39,8 +39,13 @@ var openCodeAgentOverlayJSON = []byte("{\n  \"agent\": {\n    \"gentleman\": {\n
 // Inject performs a full persona injection: the marker-bound markdown block,
 // the OpenCode/Kilocode `gentleman` agent definition in settings JSON, AND
 // the Claude Code output-style overlay. Used by `gentle-ai install`.
-func Inject(homeDir string, adapter agents.Adapter, persona model.PersonaID) (InjectionResult, error) {
-	return injectInternal(homeDir, adapter, persona, false)
+//
+// region and artifactsInEnglish are threaded into personaContent so the
+// composed language directive is appended to the persona block at inject time.
+// For gentle personas, region controls the language clause; artifactsInEnglish
+// controls the artifacts clause. Custom persona ignores both.
+func Inject(homeDir string, adapter agents.Adapter, persona model.PersonaID, region model.RegionID, artifactsInEnglish bool) (InjectionResult, error) {
+	return injectInternal(homeDir, adapter, persona, region, artifactsInEnglish, false)
 }
 
 // InjectForSync regenerates the persona assets that `gentle-ai sync` is
@@ -54,13 +59,16 @@ func Inject(homeDir string, adapter agents.Adapter, persona model.PersonaID) (In
 // SDD's gentle-orchestrator overlay, so running both in the same sync clobbers
 // each other's entries and breaks idempotency. That overlay remains an
 // install-only concern.
-func InjectForSync(homeDir string, adapter agents.Adapter, persona model.PersonaID) (InjectionResult, error) {
-	return injectInternal(homeDir, adapter, persona, true)
+//
+// region and artifactsInEnglish are threaded into personaContent so the
+// composed language directive is appended at sync time, matching install behavior.
+func InjectForSync(homeDir string, adapter agents.Adapter, persona model.PersonaID, region model.RegionID, artifactsInEnglish bool) (InjectionResult, error) {
+	return injectInternal(homeDir, adapter, persona, region, artifactsInEnglish, true)
 }
 
 // syncManaged is the internal flag previously called `markdownOnly`.
 // When true the OpenCode/Kilocode agent overlay is skipped (see InjectForSync).
-func injectInternal(homeDir string, adapter agents.Adapter, persona model.PersonaID, syncManaged bool) (InjectionResult, error) {
+func injectInternal(homeDir string, adapter agents.Adapter, persona model.PersonaID, region model.RegionID, artifactsInEnglish bool, syncManaged bool) (InjectionResult, error) {
 	if !adapter.SupportsSystemPrompt() {
 		return InjectionResult{}, nil
 	}
@@ -76,7 +84,7 @@ func injectInternal(homeDir string, adapter agents.Adapter, persona model.Person
 	files := make([]string, 0, 3)
 	changed := false
 
-	content := personaContent(adapter.Agent(), persona, residualChannel(adapter))
+	content := personaContent(adapter.Agent(), persona, residualChannel(adapter), region, artifactsInEnglish)
 	if content == "" {
 		return InjectionResult{}, nil
 	}
@@ -295,8 +303,11 @@ func injectInternal(homeDir string, adapter agents.Adapter, persona model.Person
 		// across both persona and output-style instruction layers.
 		outputStyleContent := ""
 		switch {
-		case isGentlemanConversationPersona(persona):
-			outputStyleContent = assets.MustRead("kimi/output-style-gentleman.md")
+		case isGentlePersona(persona):
+			// Kimi's reply voice lives in this module, not in the persona residual,
+			// so the composed regional directive is appended here.
+			outputStyleContent = withLanguageDirective(
+				assets.MustRead("kimi/output-style-gentleman.md"), region, artifactsInEnglish)
 		case persona == model.PersonaNeutral:
 			outputStyleContent = assets.MustRead("kimi/output-style-neutral.md")
 		}
@@ -317,7 +328,7 @@ func injectInternal(homeDir string, adapter agents.Adapter, persona model.Person
 	if (adapter.Agent() == model.AgentOpenCode || adapter.Agent() == model.AgentKilocode) && persona != model.PersonaCustom {
 		settingsPath := adapter.SettingsPath(homeDir)
 		if settingsPath != "" {
-			if isGentlemanConversationPersona(persona) {
+			if isGentlePersona(persona) {
 				if !syncManaged {
 					agentResult, err := mergeJSONFile(settingsPath, openCodeAgentOverlayJSON)
 					if err != nil {
@@ -343,11 +354,14 @@ func injectInternal(homeDir string, adapter agents.Adapter, persona model.Person
 	}
 
 	// 3. Gentleman-only: write output style + merge into settings (if agent supports it).
-	if isGentlemanConversationPersona(persona) && adapter.Agent() != model.AgentOpenClaw && adapter.SupportsOutputStyles() {
+	if isGentlePersona(persona) && adapter.Agent() != model.AgentOpenClaw && adapter.SupportsOutputStyles() {
 		outputStyleDir := adapter.OutputStyleDir(homeDir)
 		if outputStyleDir != "" {
 			outputStylePath := outputStyleDir + "/gentleman.md"
-			outputStyleContent := assets.MustRead("claude/output-style-gentleman.md")
+			// Claude's reply voice lives in the output style, not in the persona
+			// residual, so the composed regional directive is appended here.
+			outputStyleContent := withLanguageDirective(
+				assets.MustRead("claude/output-style-gentleman.md"), region, artifactsInEnglish)
 
 			styleResult, err := filemerge.WriteFileAtomic(outputStylePath, []byte(outputStyleContent), 0o644)
 			if err != nil {
@@ -398,7 +412,7 @@ func injectInternal(homeDir string, adapter agents.Adapter, persona model.Person
 
 	// 3b. Non-gentleman cleanup: remove residual Gentleman output-style artifacts
 	// left by a previous install when the user switches away from the gentleman persona.
-	if !isGentlemanConversationPersona(persona) && adapter.Agent() != model.AgentOpenClaw && adapter.SupportsOutputStyles() {
+	if !isGentlePersona(persona) && adapter.Agent() != model.AgentOpenClaw && adapter.SupportsOutputStyles() {
 		outputStyleDir := adapter.OutputStyleDir(homeDir)
 		if outputStyleDir != "" {
 			outputStylePath := outputStyleDir + "/gentleman.md"
@@ -488,8 +502,14 @@ func shouldStripManagedLegacyPersona(existing string) bool {
 	return strings.Contains(existing, "<!-- gentle-ai:persona -->")
 }
 
-func isGentlemanConversationPersona(persona model.PersonaID) bool {
-	return persona == model.PersonaGentleman || persona == model.PersonaGentlemanNeutralArtifacts
+// isGentlePersona returns true for all IDs in the gentle/gentleman family:
+// PersonaGentle (canonical), PersonaGentleman (back-compat alias), and
+// PersonaGentlemanNeutralArtifacts (migration alias). All three map to the
+// same behavior — the gentleman asset with a composed language directive.
+func isGentlePersona(persona model.PersonaID) bool {
+	return persona == model.PersonaGentle ||
+		persona == model.PersonaGentleman ||
+		persona == model.PersonaGentlemanNeutralArtifacts
 }
 
 // residualChannel reports whether the adapter already delivers tone/language/
@@ -503,16 +523,57 @@ func residualChannel(adapter agents.Adapter) bool {
 	return adapter.SupportsOutputStyles() || adapter.Agent() == model.AgentKimi
 }
 
-// personaContent returns the persona asset for the given agent and persona.
-func personaContent(agent model.AgentID, persona model.PersonaID, residualContentAvailable bool) string {
+// personaContent returns the fully composed persona content for the given agent
+// and persona. For gentle-family personas it appends the composed language
+// directive built from region and artifactsInEnglish, which is the single source
+// of the regional reply voice — no other layer writes it.
+func personaContent(agent model.AgentID, persona model.PersonaID, residualContentAvailable bool, region model.RegionID, artifactsInEnglish bool) string {
 	switch persona {
 	case model.PersonaNeutral:
 		return neutralPersonaContent(agent, residualContentAvailable)
 	case model.PersonaCustom:
 		return ""
 	default:
-		return gentlemanPersonaContent(agent)
+		content := gentlemanPersonaContent(agent)
+		if voiceLivesInOutputStyle(agent) {
+			return content
+		}
+		return withLanguageDirective(content, region, artifactsInEnglish)
 	}
+}
+
+// voiceLivesInOutputStyle reports whether the agent delivers its reply voice
+// through an output-style channel rather than the persona section. For those
+// agents the persona section is a tooling residual that must stay free of
+// tone/language content, so the composed regional directive is appended to the
+// output style instead — same composer, different delivery shape.
+//
+// This mirrors gentlemanPersonaContent's dispatch, which is agent-hardcoded
+// rather than driven by the residualContentAvailable flag. Keying the directive
+// off the flag instead would make personaContent's output depend on it for these
+// agents, which JD-020 explicitly forbids.
+func voiceLivesInOutputStyle(agent model.AgentID) bool {
+	return agent == model.AgentClaudeCode || agent == model.AgentKimi
+}
+
+// withLanguageDirective removes any regional reply directive still baked into the
+// asset and appends the directive composed for the user's selection.
+//
+// The strip is defensive rather than load-bearing: WU-5 already removed the
+// hardcoded line from the shipped assets, so this guards against a future asset
+// edit reintroducing one. Because stripRegionalVoiceDirective is a no-op on
+// content that has none, repeated syncs stay byte-identical.
+func withLanguageDirective(content string, region model.RegionID, artifactsInEnglish bool) string {
+	if content == "" {
+		return ""
+	}
+
+	stripped := strings.TrimRight(stripRegionalVoiceDirective(content), "\n") + "\n"
+	directive := model.ComposeLanguageDirective(region, artifactsInEnglish)
+	if directive == "" {
+		return stripped
+	}
+	return stripped + "\n" + directive + "\n"
 }
 
 func neutralPersonaContent(agent model.AgentID, residualContentAvailable bool) string {
@@ -592,7 +653,7 @@ var osReadFile = func(path string) ([]byte, error) {
 // persona text before them. Returns ("", false) when no preservation is needed
 // (empty file, Gentleman persona, or no managed markers found).
 func preserveManagedSections(existing, newPersona string, persona model.PersonaID) (string, bool) {
-	if existing == "" || isGentlemanConversationPersona(persona) {
+	if existing == "" || isGentlePersona(persona) {
 		return "", false
 	}
 

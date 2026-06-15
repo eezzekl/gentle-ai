@@ -1358,7 +1358,7 @@ func (s componentApplyStep) Run() error {
 	case model.ComponentPersona:
 		for _, adapter := range adapters {
 			targetDir := componentInjectionDirScoped(s.homeDir, s.workspaceDir, s.scope, adapter)
-			if _, err := persona.Inject(targetDir, adapter, s.selection.Persona); err != nil {
+			if _, err := persona.Inject(targetDir, adapter, s.selection.Persona, model.RegionID(s.selection.Region), s.selection.ArtifactsInEnglish); err != nil {
 				return fmt.Errorf("inject persona for %q: %w", adapter.Agent(), err)
 			}
 		}

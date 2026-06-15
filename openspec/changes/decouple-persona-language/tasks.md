@@ -162,7 +162,7 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 **Satisfies**: R4 (single composed directive source), R9 (composed directive sole regional source)
 
 ### WU-6.1 — Test: `personaContent` with directive + golden idempotency
-- [ ] In `inject_test.go`:
+- [x] In `inject_test.go`:
   - Test `personaContent` (updated signature or via the composition path) with `(AgentClaudeCode, PersonaGentle, RegionArgentina, true)`:
     - Assert result contains exactly ONE language directive line (the composed one).
     - Assert result does NOT contain a second hardcoded Rioplatense line.
@@ -170,15 +170,17 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
   - Test `personaContent` with `(AgentClaudeCode, PersonaNeutral, RegionUserLanguage, true)`: assert neutral contract sections survive, no marked regional voice baked in.
   - Idempotency: call the full inject path twice on a temp file; assert content byte-identical after second call; assert no duplicate directive lines.
   - `isGentlePersona` unit test: `PersonaGentle` → true; `PersonaGentleman` → true (alias); `PersonaGentlemanNeutralArtifacts` → true (alias); `PersonaNeutral` → false; `PersonaCustom` → false.
-- [ ] Run `go test ./internal/components/persona/...` — expect RED.
+- [x] Run `go test ./internal/components/persona/...` — expect RED. ✓ Confirmed RED.
 
 ### WU-6.2 — Implement: wire directive into inject
-- [ ] In `internal/components/persona/inject.go`:
-  - Update `personaContent` (or create `buildPersonaContent(agent, persona, region, artifactsInEnglish)`) to: call the existing asset read, run `stripLanguageSection()`, then append `"\n" + composeLanguageDirective(region, artifactsInEnglish)`.
-  - Rename `isGentlemanConversationPersona` to `isGentlePersona`. Update the function to match `PersonaGentle` (and normalize `PersonaGentleman` / `PersonaGentlemanNeutralArtifacts` as aliases for backward compat during transition). Update all 4 call sites in inject.go.
-  - Update `Inject` and `InjectForSync` signatures to accept `region RegionID` and `artifactsInEnglish bool` (or accept `Selection` directly). Propagate from callers in `sync.go` and any TUI paths.
-  - Update callers in `sync.go` to pass `selection.Region` and `selection.ArtifactsInEnglish`.
-- [ ] Run `go test ./internal/components/persona/...` — expect GREEN.
+- [x] In `internal/components/persona/inject.go`:
+  - Updated `personaContent` signature to `personaContent(agent, persona, region, artifactsInEnglish)`: call the existing asset read, run `stripLanguageSection()`, then append `"\n" + model.ComposeLanguageDirective(region, artifactsInEnglish)`.
+  - Renamed `isGentlemanConversationPersona` to `isGentlePersona`. Updated function to match all 3 IDs (`PersonaGentle`, `PersonaGentleman`, `PersonaGentlemanNeutralArtifacts`). Updated all 4 call sites.
+  - Updated `Inject` and `InjectForSync` signatures to accept `region model.RegionID` and `artifactsInEnglish bool`. Updated callers in `sync.go` (InjectForSync) and `run.go` (Inject).
+  - Exported `ComposeLanguageDirective` in `internal/model/region.go`.
+  - Updated all test callers in `inject_test.go`, `golden_test.go`, `openclaw_integration_test.go`, `persona_language_contract_test.go`.
+  - Regenerated 5 affected golden files with `-update` flag.
+- [x] Run `go test ./internal/components/persona/...` — expect GREEN. ✓ Confirmed GREEN (full `go test ./...` passes).
 
 **Acceptance**: Golden round-trip test — legacy state `"persona": "gentleman"` → migrate → inject → output byte-identical to pre-change gentleman persona baseline (committed golden file or inline fixture). `isGentlePersona` correctly matches all three gentleman-family IDs.
 
