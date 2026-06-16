@@ -4768,3 +4768,84 @@ func TestRunSyncPersonaContentIdempotentWithLegacyGentlemanState(t *testing.T) {
 			len(contentAfterRun1), contentAfterRun1, len(contentAfterRun2), contentAfterRun2)
 	}
 }
+
+// TestRunSyncPersistsMigratedPersonaFields verifies WU-11: a legacy "gentleman"
+// state.json is migrated in-memory on first sync, and the resolved two-axis fields
+// (style + region + artifactsInEnglish) MUST be written back to state.json. The
+// second sync then reads the already-migrated fields directly (no legacy alias
+// path) and produces byte-identical persona output.
+func TestRunSyncPersistsMigratedPersonaFields(t *testing.T) {
+	home := t.TempDir()
+	restoreHome := osUserHomeDir
+	restoreBackupHome := backup.UserHomeDirFn
+	restoreCommand := runCommand
+	restoreLookPath := cmdLookPath
+	t.Cleanup(func() {
+		osUserHomeDir = restoreHome
+		backup.UserHomeDirFn = restoreBackupHome
+		runCommand = restoreCommand
+		cmdLookPath = restoreLookPath
+	})
+
+	osUserHomeDir = func() (string, error) { return home, nil }
+	backup.UserHomeDirFn = func() (string, error) { return home, nil }
+	runCommand = func(string, ...string) error { return nil }
+	cmdLookPath = func(name string) (string, error) { return "/usr/local/bin/" + name, nil }
+
+	// Pre-migration install: "gentleman" persona, no region/artifacts fields.
+	stateData := `{"installed_agents":["claude-code"],"persona":"gentleman"}`
+	stateDir := filepath.Join(home, ".gentle-ai")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll state dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "state.json"), []byte(stateData), 0o644); err != nil {
+		t.Fatalf("WriteFile state: %v", err)
+	}
+
+	args := []string{"--agents", "claude-code", "--sdd-mode", "single"}
+
+	// Run 1: migrate "gentleman" → gentle+argentina and persist the new fields.
+	if _, err := RunSync(args); err != nil {
+		t.Fatalf("RunSync() run 1 error = %v", err)
+	}
+
+	migrated, err := state.Read(home)
+	if err != nil {
+		t.Fatalf("state.Read after run 1: %v", err)
+	}
+	if got, want := migrated.Persona, string(model.PersonaGentle); got != want {
+		t.Errorf("persisted Persona = %q, want %q", got, want)
+	}
+	if got, want := migrated.Region, string(model.RegionArgentina); got != want {
+		t.Errorf("persisted Region = %q, want %q", got, want)
+	}
+	if !migrated.ArtifactsInEnglish {
+		t.Errorf("persisted ArtifactsInEnglish = false, want true")
+	}
+
+	claudeMD := filepath.Join(home, ".claude", "CLAUDE.md")
+	out1, err := os.ReadFile(claudeMD)
+	if err != nil {
+		t.Fatalf("ReadFile CLAUDE.md after run 1: %v", err)
+	}
+
+	// Run 2: reads the migrated state directly — no legacy alias path.
+	result2, err := RunSync(args)
+	if err != nil {
+		t.Fatalf("RunSync() run 2 error = %v", err)
+	}
+	if got, want := result2.Selection.Persona, model.PersonaGentle; got != want {
+		t.Errorf("run 2 resolved Persona = %q, want %q (should read migrated state)", got, want)
+	}
+	if got, want := result2.Selection.Region, string(model.RegionArgentina); got != want {
+		t.Errorf("run 2 resolved Region = %q, want %q (should read migrated state)", got, want)
+	}
+
+	out2, err := os.ReadFile(claudeMD)
+	if err != nil {
+		t.Fatalf("ReadFile CLAUDE.md after run 2: %v", err)
+	}
+	if string(out1) != string(out2) {
+		t.Errorf("persona output not byte-identical between syncs after migration write-back")
+	}
+}

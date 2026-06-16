@@ -265,14 +265,14 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 **Satisfies**: R9 delta spec update (spec delta requirement in spec.md §"Delta to existing spec")
 
 ### WU-10.1 — Edit spec file
-- [ ] Edit `openspec/specs/persona-behavior-contract/spec.md` applying all 6 deltas from the spec delta table:
+- [x] Edit `openspec/specs/persona-behavior-contract/spec.md` applying all 6 deltas from the spec delta table:
   1. "Neutral Mentor Behavior Parity" — re-frame to `gentle` parity, not `gentleman`.
   2. "Gentleman keeps regional mentor behavior" scenario → "Gentle persona with Rioplatense region injects the voseo directive".
   3. "Artifact Language Independence" + "Gentleman voice does not leak" → re-anchor to `artifactsInEnglish` checkbox and `gentle` naming.
   4. "Claude explicit Gentleman output-style" → replace `gentleman` with `gentle`; output-style is region-neutral.
   5. "Safe Persona Fallback Semantics" → update to `gentle` style + region axis naming.
   6. Scenarios referencing `gentleman` → `gentle` + explicit region.
-- [ ] No test required (doc edit). Verify the file compiles/reads correctly.
+- [x] No test required (doc edit). Verify the file compiles/reads correctly.
 
 ---
 
@@ -281,16 +281,16 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 **Satisfies**: R6 (state write carries new fields), R2 (second sync reads migrated fields directly)
 
 ### WU-11.1 — Test: state write + second-sync no-re-migrate
-- [ ] In `internal/cli/sync_test.go` (extend):
+- [x] In `internal/cli/sync_test.go` (extend):
   - After migrate + first sync, assert that `state.json` contains `"region": "argentina"` and `"artifactsInEnglish": true` (for the `gentleman` migration case).
   - Simulate second sync from the already-migrated state: assert `applyResolvedPersona` does NOT re-apply the legacy alias path (reads `PersonaGentle` from persisted state directly, no alias needed).
   - Assert second-sync output byte-identical to first-sync output.
-- [ ] Run `go test ./internal/cli/...` — expect RED.
+- [x] Run `go test ./internal/cli/...` — expect RED.
 
 ### WU-11.2 — Implement: persist new fields on sync state write
-- [ ] In `internal/cli/sync.go` (or the sync result handler): after resolving the selection, update the state write to include `Region` and `ArtifactsInEnglish` from the resolved selection.
-- [ ] In TUI install path (`internal/tui/model.go` or `cli` install handler): ensure `state.Write` includes `Region` and `ArtifactsInEnglish` from the TUI selection.
-- [ ] Run `go test ./internal/cli/...` — expect GREEN.
+- [x] In `internal/cli/sync.go` (or the sync result handler): after resolving the selection, update the state write to include `Region` and `ArtifactsInEnglish` from the resolved selection.
+- [x] In TUI install path (`internal/tui/model.go` or `cli` install handler): ensure `state.Write` includes `Region` and `ArtifactsInEnglish` from the TUI selection.
+- [x] Run `go test ./internal/cli/...` — expect GREEN.
 
 **Acceptance**: After a single sync with a legacy `gentleman` state, a subsequent `state.Read` returns `Persona: "gentle"`, `Region: "argentina"`, `ArtifactsInEnglish: true`. The second sync hits no migration path and produces byte-identical output.
 

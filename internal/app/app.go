@@ -553,6 +553,8 @@ func tuiExecute(
 			CodexPhaseModelAssignments:  selection.CodexPhaseModelAssignments,
 			ModelAssignments:            modelAssignmentsToState(selection.ModelAssignments),
 			Persona:                     string(selection.Persona),
+			Region:                      selection.Region,
+			ArtifactsInEnglish:          selection.ArtifactsInEnglish,
 		}
 		installState.SetSelection(selection)
 		if writeErr := state.Write(homeDir, installState); writeErr != nil {

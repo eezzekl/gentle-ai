@@ -221,6 +221,8 @@ func RunInstall(args []string, detection system.DetectionResult) (InstallResult,
 		CodexPhaseModelAssignments:  input.Selection.CodexPhaseModelAssignments,
 		ModelAssignments:            modelAssignmentsToState(input.Selection.ModelAssignments),
 		Persona:                     string(input.Selection.Persona),
+		Region:                      input.Selection.Region,
+		ArtifactsInEnglish:          input.Selection.ArtifactsInEnglish,
 	}
 	newState.SetSelection(input.Selection)
 	if len(flags.Agents) > 0 {

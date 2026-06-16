@@ -1345,6 +1345,23 @@ func applyResolvedPersona(selection *model.Selection, persisted persistedSyncSta
 	}
 }
 
+// persistResolvedPersona writes the resolved persona/region/artifactsInEnglish
+// back to state.json so a later sync reads the migrated two-axis values directly
+// instead of re-applying legacy aliases. It preserves every other persisted field
+// via read-modify-write. When no readable state exists there is nothing to migrate,
+// so the write is skipped — the install path owns fresh state creation. State write
+// failures are non-fatal: sync must not break because state.json could not update.
+func persistResolvedPersona(homeDir string, selection model.Selection) {
+	existing, err := state.Read(homeDir)
+	if err != nil {
+		return
+	}
+	existing.Persona = string(selection.Persona)
+	existing.Region = selection.Region
+	existing.ArtifactsInEnglish = selection.ArtifactsInEnglish
+	_ = state.Write(homeDir, existing)
+}
+
 // RunSyncWithSelection is the programmatic entry point for sync.
 // It skips flag parsing and agent discovery — the caller provides the homeDir
 // and a fully-built Selection (agents + components + options).
@@ -1372,6 +1389,11 @@ func RunSyncWithSelection(homeDir string, selection model.Selection) (SyncResult
 		}
 		applyResolvedPersona(&selection, ps)
 	}
+
+	// Persist the resolved two-axis persona fields so a later sync reads the
+	// migrated values directly instead of re-applying legacy aliases. Preserves
+	// all other persisted state via read-modify-write. Non-fatal on failure.
+	persistResolvedPersona(homeDir, selection)
 
 	result := SyncResult{
 		Agents:    agentIDs,
