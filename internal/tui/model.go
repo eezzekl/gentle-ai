@@ -354,6 +354,7 @@ const (
 	ScreenDetection
 	ScreenAgents
 	ScreenPersona
+	ScreenPersonaLanguage
 	ScreenPreset
 	ScreenClaudeModelPicker
 	ScreenKiroModelPicker
@@ -555,6 +556,9 @@ type Model struct {
 	ProfileNameCollision bool            // true when name collides with existing profile (awaiting second enter to overwrite)
 	ProfileDeleteErr     error           // error from the last RemoveProfileAgents call, displayed on ScreenProfiles
 
+	PersonaLanguageFreeText    string // free-text region buffer on ScreenPersonaLanguage
+	PersonaLanguageFreeTextPos int    // cursor position within the free-text buffer
+
 	// UninstallMode holds the selected uninstall mode (partial, full, full-remove).
 	UninstallMode model.UninstallMode
 
@@ -658,6 +662,8 @@ func NewModel(detection system.DetectionResult, version string, installState ...
 	selection := model.Selection{
 		Agents:                 agents,
 		Persona:                model.PersonaGentle,
+		Region:                 string(model.RegionArgentina),
+		ArtifactsInEnglish:     true,
 		Preset:                 model.PresetFullGentleman,
 		Components:             components,
 		ClaudeModelAssignments: installStateClaudeAssignments(s.ClaudeModelAssignments),
@@ -1150,6 +1156,8 @@ func (m Model) View() string {
 		return screens.RenderAgents(m.Selection.Agents, m.Cursor)
 	case ScreenPersona:
 		return screens.RenderPersona(m.Selection.Persona, m.Cursor)
+	case ScreenPersonaLanguage:
+		return screens.RenderPersonaLanguage(m.Selection, m.Cursor, m.PersonaLanguageFreeText)
 	case ScreenPreset:
 		return screens.RenderPreset(m.Selection.Preset, m.Cursor)
 	case ScreenClaudeModelPicker:
@@ -1416,6 +1424,16 @@ func (m Model) handleKeyPress(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "pgdown":
 			m.AdvisoryScroll = min(maxScroll, m.AdvisoryScroll+pageSize)
 			return m, nil
+		}
+	}
+
+	// On the language/region screen, when the free-text radio is focused,
+	// capture printable runes / backspace as text input BEFORE the global
+	// keyStr switch — otherwise typing "q" or "j" would quit/navigate instead
+	// of editing the free-text region.
+	if m.Screen == ScreenPersonaLanguage && m.Cursor == len(screens.LanguageRegionOptions())-1 {
+		if handled, updated := m.handlePersonaLanguageFreeText(key); handled {
+			return updated, nil
 		}
 	}
 
@@ -2057,10 +2075,42 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 			if m.Selection.Preset != "" && m.Selection.Preset != model.PresetCustom {
 				m.Selection.Components = componentsForPreset(m.Selection.Preset, m.Selection.Persona)
 			}
-			m.setScreen(ScreenPreset)
+			// Custom persona is unmanaged — no regional voice, so skip the
+			// language/region screen. Managed personas (gentle/neutral) pick a region.
+			if m.Selection.Persona == model.PersonaCustom {
+				m.setScreen(ScreenPreset)
+			} else {
+				m.setScreen(ScreenPersonaLanguage)
+			}
 			return m, nil
 		}
 		m.setScreen(ScreenAgents)
+	case ScreenPersonaLanguage:
+		regionCount := len(screens.LanguageRegionOptions())
+		switch {
+		case m.Cursor < regionCount:
+			option := screens.LanguageRegionOptions()[m.Cursor]
+			if option == screens.RegionFreeTextSentinel {
+				freeText := strings.TrimSpace(m.PersonaLanguageFreeText)
+				if freeText == "" {
+					// Nothing typed yet — stay on the screen.
+					return m, nil
+				}
+				m.Selection.Region = freeText
+			} else {
+				m.Selection.Region = string(option)
+			}
+			m.setScreen(ScreenPreset)
+			return m, nil
+		case m.Cursor == regionCount:
+			// Artifacts-in-English checkbox.
+			m.Selection.ArtifactsInEnglish = !m.Selection.ArtifactsInEnglish
+			return m, nil
+		default:
+			// Back.
+			m.setScreen(ScreenPersona)
+			return m, nil
+		}
 	case ScreenPreset:
 		options := screens.PresetOptions()
 		if m.Cursor < len(options) {
@@ -2091,7 +2141,7 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 			m.setScreen(ScreenDependencyTree)
 			return m, nil
 		}
-		m.setScreen(ScreenPersona)
+		m.setScreen(m.presetBackScreen())
 	case ScreenClaudeModelPicker:
 		if !m.ClaudeModelPicker.InCustomMode && m.Cursor == screens.ClaudeModelPickerOptionCount(m.ClaudeModelPicker)-1 {
 			// "Back" option: in ModelConfigMode return to the config menu,
@@ -3145,9 +3195,27 @@ func buildProgressLabels(resolved planner.ResolvedPlan, communityTools []model.C
 	return labels
 }
 
+// presetBackScreen resolves where ScreenPreset returns to: the language/region
+// screen for managed personas (gentle/neutral), or directly to the persona
+// screen for custom (which skips the language screen on the way forward).
+func (m Model) presetBackScreen() Screen {
+	if m.Selection.Persona == model.PersonaCustom {
+		return ScreenPersona
+	}
+	return ScreenPersonaLanguage
+}
+
 func (m Model) goBack(cmd *tea.Cmd) Model {
 	// Block navigation while an operation (upgrade/sync/uninstall) is running.
 	if m.OperationRunning {
+		return m
+	}
+
+	// ScreenPreset back navigation depends on persona: managed personas pass
+	// through the language/region screen, custom skips it. Keep in sync with
+	// the explicit "Back" handler in confirmSelection.
+	if m.Screen == ScreenPreset {
+		m.setScreen(m.presetBackScreen())
 		return m
 	}
 
@@ -3555,6 +3623,8 @@ func (m Model) optionCount() int {
 		return len(screens.AgentOptions()) + 2
 	case ScreenPersona:
 		return len(screens.PersonaOptions()) + 1
+	case ScreenPersonaLanguage:
+		return len(screens.LanguageRegionOptions()) + 2 // regions + checkbox + Back
 	case ScreenPreset:
 		return len(screens.PresetOptions()) + 1
 	case ScreenClaudeModelPicker:
@@ -4479,6 +4549,41 @@ func (m Model) isScrollableScreen() bool {
 // handleProfileNameInput processes key events when the profile create screen
 // is at step 0 (name input). In edit mode, step 0 is skipped to step 1 — this
 // handler is only called when NOT in edit mode.
+// handlePersonaLanguageFreeText edits the free-text region buffer when the
+// free-text radio is focused on ScreenPersonaLanguage. It returns handled=true
+// only for text-editing keys (runes, space, backspace); navigation and confirm
+// keys (arrows, enter, esc) fall through to the generic key handling.
+func (m Model) handlePersonaLanguageFreeText(key tea.KeyMsg) (bool, Model) {
+	insert := func(runes []rune) {
+		buf := []rune(m.PersonaLanguageFreeText)
+		pos := m.PersonaLanguageFreeTextPos
+		next := make([]rune, 0, len(buf)+len(runes))
+		next = append(next, buf[:pos]...)
+		next = append(next, runes...)
+		next = append(next, buf[pos:]...)
+		m.PersonaLanguageFreeText = string(next)
+		m.PersonaLanguageFreeTextPos += len(runes)
+	}
+
+	switch key.Type {
+	case tea.KeyRunes:
+		insert(key.Runes)
+		return true, m
+	case tea.KeySpace:
+		insert([]rune{' '})
+		return true, m
+	case tea.KeyBackspace:
+		if m.PersonaLanguageFreeTextPos > 0 {
+			buf := []rune(m.PersonaLanguageFreeText)
+			pos := m.PersonaLanguageFreeTextPos
+			m.PersonaLanguageFreeText = string(append(buf[:pos-1], buf[pos:]...))
+			m.PersonaLanguageFreeTextPos--
+		}
+		return true, m
+	}
+	return false, m
+}
+
 func (m Model) handleProfileNameInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:

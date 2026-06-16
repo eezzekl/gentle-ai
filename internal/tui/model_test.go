@@ -461,11 +461,18 @@ func TestPiCombinedWithOtherAgentsTUIInstallKeepsAllAgentsInPlan(t *testing.T) {
 		t.Fatalf("after agents screen = %v, want %v", state.Screen, ScreenPersona)
 	}
 
-	state.Cursor = 0
+	state.Cursor = 0 // gentle persona → routes through the language/region screen.
+	updated, _ = state.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state = updated.(Model)
+	if state.Screen != ScreenPersonaLanguage {
+		t.Fatalf("after persona screen = %v, want %v", state.Screen, ScreenPersonaLanguage)
+	}
+
+	state.Cursor = 0 // pick the first region (Argentina) to advance.
 	updated, _ = state.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	state = updated.(Model)
 	if state.Screen != ScreenPreset {
-		t.Fatalf("after persona screen = %v, want %v", state.Screen, ScreenPreset)
+		t.Fatalf("after language screen = %v, want %v", state.Screen, ScreenPreset)
 	}
 
 	state.Cursor = 2 // Minimal preset: Engram only, no SDD/model detours.

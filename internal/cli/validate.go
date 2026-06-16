@@ -36,6 +36,11 @@ func NormalizeInstallFlags(flags InstallFlags, detection system.DetectionResult)
 	}
 	selection.Persona = persona
 
+	// Default language/region voice for a fresh install — mirrors the TUI model
+	// defaults so the install paths stay at parity. No flags drive these yet.
+	selection.Region = string(model.RegionArgentina)
+	selection.ArtifactsInEnglish = true
+
 	preset, err := normalizePreset(flags.Preset)
 	if err != nil {
 		return InstallInput{}, err
