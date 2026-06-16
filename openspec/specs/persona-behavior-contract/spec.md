@@ -4,21 +4,22 @@
 
 ### Requirement: Neutral Mentor Behavior Parity
 
-The system MUST treat `neutral` as a level-neutral variant of the Gentleman mentor behavior contract. Neutral persona content MUST preserve the same senior mentor expectations as Gentleman, including concise answers, direct correction after verification, concept-first teaching, careful technical reasoning, and user-growth-oriented guidance, while MUST NOT include Rioplatense Spanish, regional slang, voseo, Gentleman branding, or any persona-specific regional voice.
+The system MUST treat `neutral` as a level-neutral parity of the `gentle` mentor behavior contract. Neutral persona content MUST preserve the same senior mentor expectations as `gentle`, including concise answers, direct correction after verification, concept-first teaching, careful technical reasoning, and user-growth-oriented guidance, while MUST NOT bake any marked regional voice, regional slang, voseo, or style branding into the base asset. Regional voice is governed by the independent region axis, not by the style.
 
 #### Scenario: Neutral receives the same mentor contract without regional voice
 
-- GIVEN an agent persona asset is rendered with persona `neutral`
+- GIVEN an agent persona asset is rendered with style `neutral`
 - WHEN the generated instruction content is inspected
-- THEN it includes the same mentor behavior expectations as Gentleman for brevity, verification, concept-first explanation, and constructive correction
-- AND it does not include Rioplatense Spanish, regional slang, voseo, Gentleman branding, or regional persona voice instructions
+- THEN it includes the same mentor behavior expectations as `gentle` for brevity, verification, concept-first explanation, and constructive correction
+- AND it does not bake Rioplatense Spanish, regional slang, voseo, or style branding into the base asset
 
-#### Scenario: Gentleman keeps regional mentor behavior when explicitly selected
+#### Scenario: Gentle style with the Rioplatense region injects the voseo directive
 
-- GIVEN an agent persona asset is rendered with persona `gentleman`
+- GIVEN an agent persona asset is rendered with style `gentle` and region `argentina`
 - WHEN the generated instruction content is inspected
-- THEN it preserves the Gentleman mentor behavior contract
-- AND it preserves the Gentleman regional voice constraints
+- THEN it preserves the `gentle` mentor behavior contract
+- AND it includes exactly one composed language directive instructing Rioplatense Spanish (voseo) for conversational replies
+- AND the regional voice comes from the language axis, not from a `gentleman` persona variant
 
 ---
 
@@ -57,20 +58,27 @@ The neutral persona contract MUST require disciplined interaction defaults acros
 
 ### Requirement: Artifact Language Independence
 
-Persona voice MUST govern only direct chat replies to the user. Generated technical artifacts MUST default to English and neutral professional wording regardless of selected persona, unless the user explicitly requests a different artifact language or the existing project artifact convention requires it.
+Persona style and region voice MUST govern only direct chat replies to the user. Artifact language is governed by the `artifactsInEnglish` checkbox, not by the selected style or region. When `artifactsInEnglish` is true (the default), generated technical artifacts MUST be in English and neutral professional wording regardless of the selected style or region. When `artifactsInEnglish` is false, generated artifacts MAY use the selected reply language when the user explicitly requests it or the existing project artifact convention requires it.
 
-#### Scenario: Neutral keeps generated artifacts in English
+#### Scenario: Neutral keeps generated artifacts in English when the checkbox is ON
 
-- GIVEN persona `neutral` is active
+- GIVEN style `neutral` is active with `artifactsInEnglish` set to true
 - WHEN the system generates code, identifiers, comments, UI copy, documentation, commit messages, PR descriptions, SDD artifacts, or tests
 - THEN the generated artifact content defaults to English and neutral professional wording
 
-#### Scenario: Gentleman voice does not leak into artifacts
+#### Scenario: Gentle voice does not leak into artifacts when the checkbox is ON
 
-- GIVEN persona `gentleman` is active
+- GIVEN style `gentle` with region `argentina` and `artifactsInEnglish` set to true
 - WHEN the system generates a technical artifact without an explicit request for regional language or tone
-- THEN the artifact does not include Rioplatense slang, voseo, Gentleman stylistic emphasis, or regional persona voice
-- AND the artifact defaults to English unless project conventions require otherwise
+- THEN the artifact does not include Rioplatense slang, voseo, or regional persona voice
+- AND the artifact is in English
+
+#### Scenario: Artifacts may follow the reply language when the checkbox is OFF
+
+- GIVEN style `gentle` with region `mexico` and `artifactsInEnglish` set to false
+- WHEN the user explicitly requests artifacts in the selected reply language
+- THEN the injected artifact-language directive permits generated artifacts in that language
+- AND it differs from the English-only directive injected when the checkbox is ON
 
 ---
 
@@ -86,11 +94,12 @@ Claude-specific neutral output-style content MUST be meaningful and MUST NOT fal
 - AND it contains brevity, one-question, no-menu, verification-first, and artifact-language constraints
 - AND it does not describe or imply an unstyled default assistant character
 
-#### Scenario: Claude explicit Gentleman output-style remains honored
+#### Scenario: Claude explicit gentle output-style remains honored
 
-- GIVEN Claude assets are generated with persona `gentleman`
+- GIVEN Claude assets are generated with style `gentle`
 - WHEN the output-style content is inspected
-- THEN it preserves Gentleman-specific mentor and regional voice instructions
+- THEN it preserves the `gentle`-specific mentor instructions
+- AND the output-style content is region-neutral; regional voice is carried by the composed persona language directive, not by the output-style
 - AND it is not replaced by neutral output-style content
 
 ---
@@ -101,11 +110,11 @@ Kimi neutral output-style module content MUST be meaningful, non-empty, and sema
 
 #### Scenario: Kimi neutral output-style is meaningful
 
-- GIVEN Kimi assets are generated or injected with persona `neutral`
+- GIVEN Kimi assets are generated or injected with style `neutral`
 - WHEN the `output-style.md` content is inspected
 - THEN it is non-empty after trimming whitespace
 - AND it includes neutral mentor behavior, interaction discipline, verification-first, and artifact-language constraints
-- AND it excludes regional Gentleman voice instructions
+- AND it excludes marked regional voice instructions baked into the base asset
 
 #### Scenario: Kimi neutral output-style rejects placeholder-only content
 
@@ -145,49 +154,49 @@ All neutral consumers that are not covered by an agent-specific override MUST re
 
 ### Requirement: Safe Persona Fallback Semantics
 
-When persisted persona state is missing, empty, unreadable, or invalid, sync and persona resolution MUST NOT silently select or reactivate `gentleman`. The fallback MUST be neutral/default-safe behavior that does not introduce Gentleman regional voice unless the user explicitly selected Gentleman.
+When persisted persona state is unreadable or holds an unknown/invalid value, sync and persona resolution MUST NOT silently introduce a regional voice the user did not choose. The fallback MUST be a default-safe style that does not inject an unselected regional voice. Known legacy migration cases are distinct: an empty or absent `persona` field in a readable prior-version state.json migrates per the migration contract (R1) to `gentle` style with the `argentina` (Rioplatense) region, because that reproduces the prior gentleman default the user already had.
 
-#### Scenario: Missing persisted persona does not reactivate Gentleman
+#### Scenario: Absent legacy persona field migrates to gentle + Rioplatense
 
-- GIVEN persisted persona state is absent
+- GIVEN a readable prior-version state.json with an empty or absent `persona` field
 - WHEN sync resolves the persona to apply
-- THEN it does not select `gentleman` implicitly
-- AND it applies neutral/default-safe persona behavior without regional voice
+- THEN it migrates to style `gentle` with region `argentina` (Rioplatense) per the migration contract
+- AND `artifactsInEnglish` resolves to `true`
 
-#### Scenario: Invalid persisted persona does not reactivate Gentleman
+#### Scenario: Invalid persisted persona does not inject an unselected regional voice
 
-- GIVEN persisted persona state contains an unknown or invalid value
+- GIVEN persisted persona state contains an unknown or invalid value not covered by migration aliases
 - WHEN sync resolves the persona to apply
-- THEN it does not select `gentleman` implicitly
-- AND it applies neutral/default-safe persona behavior without regional voice
+- THEN it does not select a regional voice implicitly
+- AND it applies a default-safe style without an unselected regional voice
 
-#### Scenario: Unreadable persisted persona does not reactivate Gentleman
+#### Scenario: Unreadable persisted persona does not inject an unselected regional voice
 
 - GIVEN persisted persona state cannot be read
 - WHEN sync resolves the persona to apply
-- THEN it does not select `gentleman` implicitly
-- AND it applies neutral/default-safe persona behavior without regional voice
+- THEN it does not select a regional voice implicitly
+- AND it applies a default-safe style without an unselected regional voice
 - AND it may surface a warning if the sync command already reports recoverable configuration issues
 
 ---
 
 ### Requirement: Explicit Persona Selection Preservation
 
-Explicit persona selections MUST remain authoritative. When the user explicitly selects Gentleman, the system MUST apply Gentleman behavior and regional voice; when the user explicitly selects neutral, the system MUST apply neutral parity behavior without regional voice.
+Explicit style and region selections MUST remain authoritative. When the user explicitly selects style `gentle` with a region, the system MUST apply the `gentle` mentor behavior and inject that region's composed voice directive; when the user explicitly selects `neutral`, the system MUST apply neutral parity behavior with no marked regional voice baked into the base asset.
 
-#### Scenario: Explicit Gentleman selection remains honored during sync
+#### Scenario: Explicit gentle + region selection remains honored during sync
 
-- GIVEN the user has explicitly selected persona `gentleman`
+- GIVEN the user has explicitly selected style `gentle` with region `argentina`
 - WHEN sync resolves and applies persona assets
-- THEN Gentleman persona assets are selected
-- AND Gentleman regional voice instructions remain present
+- THEN the `gentle` persona assets are selected
+- AND the composed Rioplatense (voseo) language directive remains present
 
 #### Scenario: Explicit neutral selection remains honored during sync
 
-- GIVEN the user has explicitly selected persona `neutral`
+- GIVEN the user has explicitly selected style `neutral`
 - WHEN sync resolves and applies persona assets
 - THEN neutral persona assets are selected
-- AND the rendered content includes neutral parity behavior without regional voice
+- AND the rendered content includes neutral parity behavior with no marked regional voice in the base asset
 
 #### Scenario: Fallback does not override an explicit selection
 
