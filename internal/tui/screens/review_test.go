@@ -157,9 +157,11 @@ func TestRenderReviewSummarizesPersonaConversationAndArtifacts(t *testing.T) {
 		persona model.PersonaID
 		want    string
 	}{
-		{name: "Gentleman", persona: model.PersonaGentleman, want: "Voseo conversation; English technical artifacts"},
-		{name: "Gentleman with English artifacts", persona: model.PersonaGentlemanNeutralArtifacts, want: "Voseo conversation; English technical artifacts (legacy alias)"},
-		{name: "Neutral", persona: model.PersonaNeutral, want: "No regional conversation tone; English technical artifacts"},
+		// Re-anchored to the style axis: the review must summarize the STYLE the
+		// user picked, without claiming a regional tone — the region is a separate
+		// selection shown on its own review line.
+		{name: "Gentle", persona: model.PersonaGentle, want: "Teaching-first mentor tone; reply language chosen on the next screen"},
+		{name: "Regionless", persona: model.PersonaNeutral, want: "No marked conversation tone; English technical artifacts"},
 	}
 
 	for _, tt := range tests {

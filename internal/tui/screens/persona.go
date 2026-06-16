@@ -8,14 +8,18 @@ import (
 )
 
 func PersonaOptions() []model.PersonaID {
-	return []model.PersonaID{model.PersonaGentleman, model.PersonaGentlemanNeutralArtifacts, model.PersonaNeutral, model.PersonaCustom}
+	return []model.PersonaID{model.PersonaGentle, model.PersonaNeutral, model.PersonaCustom}
 }
 
 var personaDescriptions = map[model.PersonaID]string{
-	model.PersonaGentleman:                 "Voseo conversation; English technical artifacts",
-	model.PersonaGentlemanNeutralArtifacts: "Voseo conversation; English technical artifacts (legacy alias)",
-	model.PersonaNeutral:                   "No regional conversation tone; English technical artifacts",
-	model.PersonaCustom:                    "Do not install a managed persona; choose themes/logo on the next screens",
+	// Descriptions describe the STYLE axis only — the reply language and region
+	// are chosen on the next screen, so no entry here may promise a regional
+	// voice. They also must not reuse the word "neutral" as a descriptor: issue
+	// #833 is precisely that the word named two unrelated axes at once, and
+	// TestPersonaDescriptionsNeverReuseNeutral pins that.
+	model.PersonaGentle:  "Teaching-first mentor tone; reply language chosen on the next screen",
+	model.PersonaNeutral: "No marked conversation tone; English technical artifacts",
+	model.PersonaCustom:  "Do not install a managed persona; choose themes/logo on the next screens",
 }
 
 func RenderPersona(selected model.PersonaID, cursor int) string {

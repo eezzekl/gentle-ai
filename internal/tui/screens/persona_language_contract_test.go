@@ -7,16 +7,24 @@ import (
 	"github.com/gentleman-programming/gentle-ai/v2/internal/model"
 )
 
-func TestPersonaOptionsIncludeGentlemanNeutralArtifacts(t *testing.T) {
-	options := PersonaOptions()
-	found := false
-	for _, option := range options {
-		if option == model.PersonaGentlemanNeutralArtifacts {
-			found = true
+func TestPersonaOptionsAreStyleAxisOnly(t *testing.T) {
+	got := PersonaOptions()
+	want := []model.PersonaID{model.PersonaGentle, model.PersonaNeutral, model.PersonaCustom}
+	if len(got) != len(want) {
+		t.Fatalf("PersonaOptions() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("PersonaOptions()[%d] = %q, want %q (full: %v)", i, got[i], want[i], got)
 		}
 	}
-	if !found {
-		t.Fatalf("PersonaOptions() = %v, missing %q", options, model.PersonaGentlemanNeutralArtifacts)
+}
+
+func TestPersonaOptionsDropHybrid(t *testing.T) {
+	for _, option := range PersonaOptions() {
+		if option == model.PersonaGentlemanNeutralArtifacts {
+			t.Fatalf("PersonaOptions() still includes the removed hybrid persona %q", option)
+		}
 	}
 }
 
@@ -37,47 +45,50 @@ func TestPersonaDescriptionsNeverReuseNeutral(t *testing.T) {
 	}
 }
 
-// TestPersonaDescriptionsSeparateToneFromArtifactLanguage asserts the two axes
-// stay distinguishable: only the Gentleman personas claim a regional
-// conversational tone, and every managed persona states that technical
-// artifacts are English. Collapsing the descriptions into each other, or giving
-// the neutral persona a regional tone, fails here.
-func TestPersonaDescriptionsSeparateToneFromArtifactLanguage(t *testing.T) {
-	managed := []model.PersonaID{
-		model.PersonaGentleman,
-		model.PersonaGentlemanNeutralArtifacts,
-		model.PersonaNeutral,
+// TestPersonaDescriptionsCarryNoRegionalTone is the two-axis successor to
+// TestPersonaDescriptionsSeparateToneFromArtifactLanguage. That test asserted
+// only the Gentleman personas claimed a regional tone; under the decoupled model
+// NO style may claim one, because the region is a separate selection made on the
+// next screen. A description promising voseo would misreport what the selector
+// installs for a user who then picks Mexico.
+func TestPersonaDescriptionsCarryNoRegionalTone(t *testing.T) {
+	regionalWords := []string{"voseo", "rioplatense", "argentine", "mexican", "colombian", "chilean", "castilian"}
+	for persona, description := range personaDescriptions {
+		lowered := strings.ToLower(description)
+		for _, word := range regionalWords {
+			if strings.Contains(lowered, word) {
+				t.Fatalf("persona %q description claims regional tone %q, which now belongs to the region axis: %q",
+					persona, word, description)
+			}
+		}
 	}
-	for _, persona := range managed {
-		description, ok := personaDescriptions[persona]
-		if !ok {
+}
+
+// TestPersonaDescriptionsStayDistinguishable keeps the selector readable: the
+// managed styles must not collapse into the same sentence, and the style that
+// forces English artifacts must say so.
+func TestPersonaDescriptionsStayDistinguishable(t *testing.T) {
+	for _, persona := range PersonaOptions() {
+		if _, ok := personaDescriptions[persona]; !ok {
 			t.Fatalf("persona %q has no description", persona)
-		}
-		if !strings.Contains(strings.ToLower(description), "english technical artifacts") {
-			t.Fatalf("persona %q must state that technical artifacts are English: %q", persona, description)
-		}
-		mentionsVoseo := strings.Contains(strings.ToLower(description), "voseo")
-		isGentleman := persona == model.PersonaGentleman || persona == model.PersonaGentlemanNeutralArtifacts
-		if mentionsVoseo != isGentleman {
-			t.Fatalf("persona %q voseo claim = %v, want %v (only Gentleman personas carry a regional tone): %q",
-				persona, mentionsVoseo, isGentleman, description)
 		}
 	}
 
-	if personaDescriptions[model.PersonaGentleman] == personaDescriptions[model.PersonaGentlemanNeutralArtifacts] {
-		t.Fatal("the Gentleman persona and its legacy alias must stay distinguishable in the selector")
+	if personaDescriptions[model.PersonaGentle] == personaDescriptions[model.PersonaNeutral] {
+		t.Fatal("the gentle and neutral styles must stay distinguishable in the selector")
+	}
+
+	if !strings.Contains(strings.ToLower(personaDescriptions[model.PersonaNeutral]), "english technical artifacts") {
+		t.Fatalf("the regionless style must state that technical artifacts are English: %q",
+			personaDescriptions[model.PersonaNeutral])
 	}
 }
 
 // TestRenderPersonaShowsEveryManagedDescription keeps the selector itself
-// honest: each managed persona's description must actually reach the rendered
+// honest: each selectable style's description must actually reach the rendered
 // screen.
 func TestRenderPersonaShowsEveryManagedDescription(t *testing.T) {
-	for _, persona := range []model.PersonaID{
-		model.PersonaGentleman,
-		model.PersonaGentlemanNeutralArtifacts,
-		model.PersonaNeutral,
-	} {
+	for _, persona := range PersonaOptions() {
 		out := RenderPersona(persona, 0)
 		if !strings.Contains(out, personaDescriptions[persona]) {
 			t.Fatalf("RenderPersona(%q) does not show its description %q; output:\n%s",
@@ -86,15 +97,28 @@ func TestRenderPersonaShowsEveryManagedDescription(t *testing.T) {
 	}
 }
 
+func TestRenderPersonaDescribesStyleAxis(t *testing.T) {
+	out := RenderPersona(model.PersonaGentle, 0)
+	for _, want := range []string{
+		"gentle",
+		"neutral",
+		"custom",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("RenderPersona() missing style option %q; output:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "gentleman-neutral-artifacts") {
+		t.Fatalf("RenderPersona() still mentions the removed hybrid persona; output:\n%s", out)
+	}
+}
+
 // TestReviewPersonaLabelKeepsThePersonaID guards the confirm-before-write
 // screen: the reader must be able to see the exact persona value that will be
-// written to state.json, not only its prose description. The two Gentleman
-// variants share a description apart from the alias suffix, so dropping the ID
-// would make them indistinguishable at the point of no return.
+// written to state.json, not only its prose description.
 func TestReviewPersonaLabelKeepsThePersonaID(t *testing.T) {
 	for _, persona := range []model.PersonaID{
-		model.PersonaGentleman,
-		model.PersonaGentlemanNeutralArtifacts,
+		model.PersonaGentle,
 		model.PersonaNeutral,
 	} {
 		label := reviewPersonaLabel(persona)
