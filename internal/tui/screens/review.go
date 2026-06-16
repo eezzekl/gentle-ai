@@ -20,6 +20,15 @@ func RenderReview(payload planner.ReviewPayload, cursor int) string {
 
 	b.WriteString("  " + styles.HeadingStyle.Render("Agents") + "  " + styles.UnselectedStyle.Render(joinIDs(payload.Agents)) + "\n")
 	b.WriteString("  " + styles.HeadingStyle.Render("Persona") + "  " + styles.UnselectedStyle.Render(reviewPersonaLabel(payload.Persona)) + "\n")
+	// WU-9: show language/region + artifacts flag for managed personas.
+	if payload.Persona != model.PersonaCustom {
+		b.WriteString("  " + styles.HeadingStyle.Render("Region") + "  " + styles.UnselectedStyle.Render(reviewRegionLabel(payload.Region)) + "\n")
+		artifactsMarker := "[ ]"
+		if payload.ArtifactsInEnglish {
+			artifactsMarker = "[x]"
+		}
+		b.WriteString("  " + styles.HeadingStyle.Render("Artifacts") + "  " + styles.UnselectedStyle.Render(artifactsMarker+" English-only") + "\n")
+	}
 	b.WriteString("  " + styles.HeadingStyle.Render("Preset") + "  " + styles.UnselectedStyle.Render(reviewPresetLabel(payload.Preset)) + "\n")
 	b.WriteString("\n")
 
@@ -97,6 +106,16 @@ func reviewPersonaLabel(persona model.PersonaID) string {
 		return string(persona) + " — " + description
 	}
 	return string(persona)
+}
+
+func reviewRegionLabel(region string) string {
+	if region == "" {
+		return "not set"
+	}
+	if label, ok := model.RegionMap[model.RegionID(region)]; ok {
+		return label
+	}
+	return region
 }
 
 func reviewPresetLabel(preset model.PresetID) string {

@@ -174,3 +174,44 @@ func TestRenderReviewSummarizesPersonaConversationAndArtifacts(t *testing.T) {
 		})
 	}
 }
+
+// ─── WU-9: Review screen must show region + artifacts-in-English flag ─────────
+
+func TestRenderReviewShowsRegionLabel(t *testing.T) {
+	payload := planner.ReviewPayload{
+		Agents:             []model.AgentID{model.AgentClaudeCode},
+		Persona:            model.PersonaGentle,
+		Preset:             model.PresetFullGentleman,
+		Region:             string(model.RegionMexico),
+		ArtifactsInEnglish: true,
+	}
+
+	out := RenderReview(payload, 0)
+
+	if !strings.Contains(out, "Region") && !strings.Contains(out, "Language") {
+		t.Fatalf("RenderReview should show a Region/Language line; output:\n%s", out)
+	}
+	if !strings.Contains(out, model.RegionMap[model.RegionMexico]) && !strings.Contains(out, "mexico") {
+		t.Fatalf("RenderReview should show the selected region; output:\n%s", out)
+	}
+}
+
+func TestRenderReviewShowsArtifactsFlagOnAndOff(t *testing.T) {
+	on := RenderReview(planner.ReviewPayload{
+		Persona:            model.PersonaGentle,
+		Region:             string(model.RegionArgentina),
+		ArtifactsInEnglish: true,
+	}, 0)
+	if !strings.Contains(on, "[x]") {
+		t.Fatalf("RenderReview should show artifacts flag checked when ArtifactsInEnglish=true; output:\n%s", on)
+	}
+
+	off := RenderReview(planner.ReviewPayload{
+		Persona:            model.PersonaGentle,
+		Region:             string(model.RegionArgentina),
+		ArtifactsInEnglish: false,
+	}, 0)
+	if !strings.Contains(off, "[ ]") {
+		t.Fatalf("RenderReview should show artifacts flag unchecked when ArtifactsInEnglish=false; output:\n%s", off)
+	}
+}

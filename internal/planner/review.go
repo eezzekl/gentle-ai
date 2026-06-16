@@ -34,5 +34,8 @@ func BuildReviewPayload(selection model.Selection, resolved ResolvedPlan) Review
 		// Issue #149: pass StrictTDD and whether SDD is in plan.
 		StrictTDD: selection.StrictTDD,
 		HasSDD:    hasSDD,
+		// WU-9: carry language/region + artifacts flag into the review.
+		Region:             selection.Region,
+		ArtifactsInEnglish: selection.ArtifactsInEnglish,
 	}
 }

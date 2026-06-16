@@ -37,6 +37,15 @@ type ReviewPayload struct {
 	// HasSDD is true when the SDD component is present in the resolved plan (Issue #149).
 	// Controls whether the Strict TDD row is shown in the review screen.
 	HasSDD bool
+
+	// Region is the selected language/region for persona voice injection.
+	// Empty for custom (unmanaged) persona. Curated values match RegionID
+	// constants; a free-text value is shown verbatim.
+	Region string
+
+	// ArtifactsInEnglish reflects whether generated artifacts stay in English
+	// regardless of the conversational language.
+	ArtifactsInEnglish bool
 }
 
 type PlatformDecision struct {

@@ -191,20 +191,20 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 **Satisfies**: R8 (TUI style options), R3 (selectable set)
 
 ### WU-7.1 — Test: `PersonaOptions()` and `RenderPersona`
-- [ ] In `internal/tui/screens/` — new test or extend `persona_preset_test.go`:
+- [x] In `internal/tui/screens/` — new test or extend `persona_preset_test.go`:
   - Assert `PersonaOptions()` returns exactly `[gentle, neutral, custom]` (length 3).
   - Assert `PersonaOptions()` does NOT contain `PersonaGentlemanNeutralArtifacts`.
   - Render test: `RenderPersona(PersonaGentle, 0)` produces output containing "gentle" and NOT containing "gentleman-neutral-artifacts".
-- [ ] Run `go test ./internal/tui/...` — expect RED.
+- [x] Run `go test ./internal/tui/...` — expect RED.
 
 ### WU-7.2 — Implement: update `PersonaOptions` + `RenderPersona`
-- [ ] In `internal/tui/screens/persona.go`:
+- [x] In `internal/tui/screens/persona.go`:
   - Update `PersonaOptions()` to return `[]model.PersonaID{model.PersonaGentle, model.PersonaNeutral, model.PersonaCustom}`.
   - Update `personaDescriptions` map: add `PersonaGentle` description; remove `PersonaGentleman` and `PersonaGentlemanNeutralArtifacts` entries.
-- [ ] In `internal/tui/model.go`: update `ScreenPersona` cursor-count (was 4 options + Back; now 3 options + Back → `len(PersonaOptions()) + 1` already correct since it uses the slice length).
+- [x] In `internal/tui/model.go`: update `ScreenPersona` cursor-count (was 4 options + Back; now 3 options + Back → `len(PersonaOptions()) + 1` already correct since it uses the slice length).
   - Update any `ScreenPersona` routing logic that branched on `PersonaGentlemanNeutralArtifacts`.
-- [ ] In `internal/tui/router.go`: add new route `ScreenPersona → ScreenPersonaLanguage` for `gentle` and `neutral`; keep `ScreenPersona → ScreenPreset` for `custom` (skips language screen).
-- [ ] Run `go test ./internal/tui/...` — expect GREEN.
+- [x] In `internal/tui/router.go`: add new route `ScreenPersona → ScreenPersonaLanguage` for `gentle` and `neutral`; keep `ScreenPersona → ScreenPreset` for `custom` (skips language screen). **Shipped in WU-8** (route requires the screen, which WU-8 introduces).
+- [x] Run `go test ./internal/tui/...` — expect GREEN.
 
 **Acceptance**: `PersonaOptions()` returns exactly 3 items. Routing: selecting `custom` skips `ScreenPersonaLanguage` and goes directly to `ScreenPreset`.
 
@@ -215,7 +215,7 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 **Satisfies**: R8 (region radios, "Idioma del usuario", free text, checkbox), R5 (checkbox default ON)
 
 ### WU-8.1 — Test: `RenderPersonaLanguage` + routing
-- [ ] In `internal/tui/screens/persona_language_test.go` (new file):
+- [x] In `internal/tui/screens/persona_language_test.go` (new file):
   - `RenderPersonaLanguage(selection, cursor)` renders:
     - 5 curated region radios with gentilicio-first Spanish labels (e.g. "Argentino (rioplatense, voseo)").
     - "Idioma del usuario" option always present.
@@ -226,18 +226,18 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
     - After selecting `neutral` on `ScreenPersona` → next screen is `ScreenPersonaLanguage`.
     - After selecting `custom` on `ScreenPersona` → next screen is `ScreenPreset` (region screen skipped).
   - Assert `Selection.ArtifactsInEnglish` defaults to `true` when screen initializes.
-- [ ] Run `go test ./internal/tui/...` — expect RED.
+- [x] Run `go test ./internal/tui/...` — expect RED.
 
 ### WU-8.2 — Implement: `persona_language.go` screen
-- [ ] Create `internal/tui/screens/persona_language.go`:
+- [x] Create `internal/tui/screens/persona_language.go`:
   - `LanguageRegionOptions()` returning the 7 region options (5 curated + user-language + free-text sentinel).
   - `RenderPersonaLanguage(selection model.Selection, cursor int, freeText string) string` rendering the radios, "Idioma del usuario", free-text input, and checkbox.
   - TUI labels for curated regions use the Spanish gentilicio-first form from `model.RegionMap`.
-- [ ] Add `ScreenPersonaLanguage` to `model.go` screen enum.
-- [ ] Update `router.go` routes to include `ScreenPersonaLanguage`.
-- [ ] Update `model.go` `Update()` to handle `ScreenPersonaLanguage` keystrokes: navigate radios, toggle checkbox, accept free text, proceed to `ScreenPreset`.
-- [ ] Ensure `Selection.ArtifactsInEnglish` is initialized to `true` when building a new default `Selection`.
-- [ ] Run `go test ./internal/tui/...` — expect GREEN.
+- [x] Add `ScreenPersonaLanguage` to `model.go` screen enum.
+- [x] Update `router.go` routes to include `ScreenPersonaLanguage`.
+- [x] Update `model.go` `Update()` to handle `ScreenPersonaLanguage` keystrokes: navigate radios, toggle checkbox, accept free text, proceed to `ScreenPreset`.
+- [x] Ensure `Selection.ArtifactsInEnglish` is initialized to `true` when building a new default `Selection`.
+- [x] Run `go test ./internal/tui/...` — expect GREEN.
 
 **Acceptance**: Selecting `user-language` sets `Selection.Region = "user-language"`. Free-text entry sets `Selection.Region` to the typed string. Checkbox toggle sets `Selection.ArtifactsInEnglish`.
 
@@ -248,15 +248,15 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 **Satisfies**: R8 (review shows region + flag)
 
 ### WU-9.1 — Test: `RenderReview` with region + artifacts
-- [ ] In `internal/tui/screens/review_test.go` (extend):
+- [x] In `internal/tui/screens/review_test.go` (extend):
   - Assert `RenderReview` with a payload containing `Region: "mexico"` and `ArtifactsInEnglish: true` includes a "Region" or "Language" line showing "mexico" (or its label).
   - Assert `RenderReview` with `ArtifactsInEnglish: false` shows the off-state of the checkbox.
-- [ ] Run `go test ./internal/tui/...` — expect RED.
+- [x] Run `go test ./internal/tui/...` — expect RED.
 
 ### WU-9.2 — Implement: extend `ReviewPayload` + `RenderReview`
-- [ ] In `internal/planner` (or wherever `ReviewPayload` lives): add `Region string` and `ArtifactsInEnglish bool` fields.
-- [ ] In `internal/tui/screens/review.go`: render the new fields in the review layout.
-- [ ] Run `go test ./internal/tui/...` — expect GREEN.
+- [x] In `internal/planner` (or wherever `ReviewPayload` lives): add `Region string` and `ArtifactsInEnglish bool` fields.
+- [x] In `internal/tui/screens/review.go`: render the new fields in the review layout.
+- [x] Run `go test ./internal/tui/...` — expect GREEN.
 
 ---
 
