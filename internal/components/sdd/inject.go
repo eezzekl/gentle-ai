@@ -128,6 +128,29 @@ type codexModelResolver interface {
 	RenderCodexPhaseEfforts(assignments map[string]model.CodexEffort, carrilModels map[string]string) string
 }
 
+// SharedReferenceLayout is an optional adapter capability: if an adapter
+// implements this interface, the full per-agent SDD orchestrator body is
+// written to a shared reference file under ReferencesDir instead of being
+// inlined into the root system prompt, and a short imperative gate stub
+// (see renderSDDGateStub) is injected under the existing "sdd-orchestrator"
+// marker instead. Satisfied structurally by the gemini and antigravity
+// adapters (see design.md D1 — precedent: bootstrapper, codexModelResolver
+// above).
+type SharedReferenceLayout interface {
+	ReferencesDir(homeDir string) string
+}
+
+// renderSDDGateStub renders the short imperative stub written into the root
+// system prompt (under the existing "sdd-orchestrator" marker) for adapters
+// that implement SharedReferenceLayout, in place of the full per-agent
+// orchestrator body. See design.md D5 for the wording invariants this
+// content must satisfy.
+func renderSDDGateStub() string {
+	return "SDD commands: /sdd-init, /sdd-new, /sdd-continue, /sdd-status, /sdd-apply, /sdd-verify, /sdd-archive. " +
+		"Read `~/.gemini/references/sdd-orchestrator.md` with your file-read tool and follow it " +
+		"before handling any SDD command or request, including its natural-language equivalent."
+}
+
 // monorepoRootMarkers identify files/dirs that ONLY exist at the true root
 // of a multi-package workspace. If any of these is found while walking up,
 // we stop immediately — this is the authoritative project root.

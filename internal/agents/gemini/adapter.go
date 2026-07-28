@@ -97,6 +97,13 @@ func (a *Adapter) SkillsDir(homeDir string) string {
 	return filepath.Join(homeDir, ".gemini", "skills")
 }
 
+// ReferencesDir returns the shared directory where large per-agent reference
+// bodies (engram protocol, SDD orchestrator) are written instead of being
+// inlined into GEMINI.md. Satisfies the SharedReferenceLayout interface.
+func (a *Adapter) ReferencesDir(homeDir string) string {
+	return filepath.Join(homeDir, ".gemini", "references")
+}
+
 func (a *Adapter) SettingsPath(homeDir string) string {
 	return filepath.Join(homeDir, ".gemini", "settings.json")
 }

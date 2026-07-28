@@ -28,6 +28,30 @@ type bootstrapper interface {
 	BootstrapTemplate(homeDir string) error
 }
 
+// SharedReferenceLayout is an optional adapter capability: if an adapter
+// implements this interface, the full Engram protocol body is written to
+// a shared reference file under ReferencesDir instead of being inlined into
+// the root system prompt, and a short imperative stub (see
+// renderSessionBootstrapStub) is injected under the existing
+// "engram-protocol" marker instead. Satisfied structurally by the gemini
+// and antigravity adapters (see design.md D1 — precedent: bootstrapper,
+// codexModelResolver in sdd/inject.go).
+type SharedReferenceLayout interface {
+	ReferencesDir(homeDir string) string
+}
+
+// renderSessionBootstrapStub renders the short imperative stub written into
+// the root system prompt (under the existing "engram-protocol" marker) for
+// adapters that implement SharedReferenceLayout, in place of the full
+// protocol body. See design.md D5 for the wording invariants this content
+// must satisfy.
+func renderSessionBootstrapStub() string {
+	return "Before your first reply in this session, read `~/.gemini/references/engram-protocol.md` " +
+		"with your file-read tool. That absolute path is in your home directory, NOT the workspace — " +
+		"do not resolve it against the current project. Treat its content as active session instructions " +
+		"and load it before your first reply."
+}
+
 type piEngramProvisioner interface {
 	ProvisionEngramMCP(homeDir string) (changed bool, files []string, err error)
 }

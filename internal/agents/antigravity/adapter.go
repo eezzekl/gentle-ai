@@ -105,6 +105,15 @@ func (a *Adapter) SkillsDir(homeDir string) string {
 	return filepath.Join(a.antigravityVariantDir(homeDir), "skills")
 }
 
+// ReferencesDir returns the shared directory where large per-agent reference
+// bodies (engram protocol, SDD orchestrator) are written instead of being
+// inlined into GEMINI.md. Not variant-dependent: Antigravity shares this
+// directory with gemini-cli, like SystemPromptDir and SystemPromptFile.
+// Satisfies the SharedReferenceLayout interface.
+func (a *Adapter) ReferencesDir(homeDir string) string {
+	return filepath.Join(homeDir, ".gemini", "references")
+}
+
 func (a *Adapter) SettingsPath(homeDir string) string {
 	return filepath.Join(a.antigravityVariantDir(homeDir), "settings.json")
 }

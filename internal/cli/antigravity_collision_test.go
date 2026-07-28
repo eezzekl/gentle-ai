@@ -31,6 +31,7 @@ func TestAntigravityCollisionCheckIncludesGeminiCLI(t *testing.T) {
 		"Antigravity intentionally uses the Gemini-compatible global prompt surface",
 		"last synced SDD orchestrator owns the shared gentle-ai:sdd-orchestrator section",
 		"Prefer Antigravity for new installs",
+		"~/.gemini/references/",
 	} {
 		if !strings.Contains(message, want) {
 			t.Fatalf("warning message missing %q; got:\n%s", want, message)

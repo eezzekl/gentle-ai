@@ -2738,8 +2738,9 @@ func antigravityCollisionCheck(agents []model.AgentID) []verify.Check {
 			Description: "Antigravity and Gemini CLI share ~/.gemini/GEMINI.md",
 			Soft:        true,
 			Run: func(context.Context) error {
+				// refusal:by-design human-authority: choosing which of the two colliding agents stays active on this shared surface is a deliberate human decision; no command can make that choice for the operator
 				return fmt.Errorf(
-					"Antigravity and Gemini CLI write rules to ~/.gemini/GEMINI.md\n" +
+					"Antigravity and Gemini CLI write rules to ~/.gemini/GEMINI.md and share reference files under ~/.gemini/references/\n" +
 						"Antigravity intentionally uses the Gemini-compatible global prompt surface; the last synced SDD orchestrator owns the shared gentle-ai:sdd-orchestrator section.\n" +
 						"Prefer Antigravity for new installs; keep Gemini CLI selected only when you intentionally want that legacy prompt to be the active one.",
 				)

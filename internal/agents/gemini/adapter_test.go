@@ -151,3 +151,13 @@ func TestConfigPathsCrossPlatform(t *testing.T) {
 		t.Fatalf("SystemPromptFile() = %q, want %q", got, filepath.Join(home, ".gemini", "GEMINI.md"))
 	}
 }
+
+func TestReferencesDir(t *testing.T) {
+	a := NewAdapter()
+	home := "/tmp/home"
+
+	want := filepath.Join(home, ".gemini", "references")
+	if got := a.ReferencesDir(home); got != want {
+		t.Fatalf("ReferencesDir() = %q, want %q", got, want)
+	}
+}

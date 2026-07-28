@@ -265,6 +265,18 @@ func TestConfigPathsStaticPaths(t *testing.T) {
 	}
 }
 
+func TestReferencesDir(t *testing.T) {
+	// ReferencesDir is not variant-dependent: it is the shared Gemini surface,
+	// like SystemPromptDir and SystemPromptFile.
+	a := NewAdapter()
+	home := "/tmp/home"
+
+	want := filepath.Join(home, ".gemini", "references")
+	if got := a.ReferencesDir(home); got != want {
+		t.Fatalf("ReferencesDir() = %q, want %q", got, want)
+	}
+}
+
 // --- Installation ---
 
 func TestInstallCommand(t *testing.T) {
