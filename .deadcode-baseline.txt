@@ -55,10 +55,10 @@ internal/components/engram/download.go	downloadAndExtractTarGz
 internal/components/engram/download.go	downloadAndExtractZip
 internal/components/engram/inject.go	Inject
 internal/components/engram/inject.go	SetLookPathForTest
+internal/components/engram/inject.go	SetUserHomeDirForTest
 internal/components/engram/inject.go	engramServerJSON
 internal/components/engram/inject.go	ensureAntigravitySettings
 internal/components/engram/inject.go	isAbsoluteEngramPath
-internal/components/engram/inject.go	renderSessionBootstrapStub
 internal/components/engram/verify.go	CountVersionCallsForTest
 internal/components/engram/verify.go	SetVersionForTest
 internal/components/filemerge/toml.go	RemoveTOMLTableKeys

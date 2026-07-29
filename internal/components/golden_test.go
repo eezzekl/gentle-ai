@@ -939,6 +939,9 @@ func TestGoldenEngram_Antigravity(t *testing.T) {
 	home := t.TempDir()
 
 	engram.SetLookPathForTest(t, "/opt/homebrew/bin/engram", "")
+	// Pin the temp dir as the user home so the shared reference layout applies;
+	// the split is deliberately skipped when the target is not the home dir.
+	engram.SetUserHomeDirForTest(t, home)
 
 	result, err := engram.Inject(home, antigravityAdapter())
 	if err != nil {
@@ -952,9 +955,38 @@ func TestGoldenEngram_Antigravity(t *testing.T) {
 	mcpJSON := readTestFile(t, filepath.Join(home, ".gemini", "antigravity-cli", "mcp_config.json"))
 	assertGolden(t, "engram-antigravity-mcp.golden", mcpJSON)
 
-	// GEMINI.md must contain the engram-protocol section.
+	// GEMINI.md carries only the session-bootstrap stub under the
+	// engram-protocol marker; the full body lives in the shared reference file.
 	rulesFile := readTestFile(t, filepath.Join(home, ".gemini", "GEMINI.md"))
 	assertGolden(t, "engram-antigravity-rulesmd.golden", rulesFile)
+
+	referenceFile := readTestFile(t, filepath.Join(home, ".gemini", "references", "engram-protocol.md"))
+	assertGolden(t, "engram-antigravity-referencefile.golden", referenceFile)
+}
+
+// TestGoldenEngram_Gemini pins the shared reference layout for gemini-cli:
+// gemini and antigravity write the same ~/.gemini/GEMINI.md and the same
+// ~/.gemini/references/engram-protocol.md, so both goldens must stay
+// byte-identical to their antigravity counterparts (design.md D3).
+func TestGoldenEngram_Gemini(t *testing.T) {
+	home := t.TempDir()
+
+	engram.SetLookPathForTest(t, "/opt/homebrew/bin/engram", "")
+	engram.SetUserHomeDirForTest(t, home)
+
+	result, err := engram.Inject(home, geminiAdapter())
+	if err != nil {
+		t.Fatalf("engram.Inject(gemini) error = %v", err)
+	}
+	if !result.Changed {
+		t.Fatalf("engram.Inject(gemini) changed = false")
+	}
+
+	rulesFile := readTestFile(t, filepath.Join(home, ".gemini", "GEMINI.md"))
+	assertGolden(t, "engram-gemini-rulesmd.golden", rulesFile)
+
+	referenceFile := readTestFile(t, filepath.Join(home, ".gemini", "references", "engram-protocol.md"))
+	assertGolden(t, "engram-gemini-referencefile.golden", referenceFile)
 }
 
 // ---------------------------------------------------------------------------

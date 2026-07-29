@@ -46,9 +46,10 @@ Sequential dependency (PR1 → {PR2,PR3} → PR4) fits **feature-branch-chain** 
 
 ## Phase 2: Engram Reference Wiring (PR2)
 
-- [ ] 2.1 RED: golden test — `engram.Inject(geminiAdapter())` and `engram.Inject(antigravityAdapter())` write `~/.gemini/references/engram-protocol.md` (verbatim `protocolFull()`, no test-marker blocks) and inject bootstrap stub under `gentle-ai:engram-protocol` marker in root (spec: engram-protocol-injection Reference-File Emission)
-- [ ] 2.2 GREEN: in `internal/components/engram/inject.go` default case (~529-546), type-assert `SharedReferenceLayout`; when present write reference file + stub instead of inline body
-- [ ] 2.3 [generated] regen `testdata/golden/engram-antigravity-rulesmd.golden`; add `testdata/golden/engram-gemini-rulesmd.golden`, `testdata/golden/engram-gemini-referencefile.golden`, `testdata/golden/engram-antigravity-referencefile.golden`
+- [x] 2.1 RED: `internal/components/engram/reference_file_test.go` (in-package, so `protocolFull()` verbatim equality is directly assertable) + golden tests in `internal/components/golden_test.go` — `engram.Inject` for gemini and antigravity write `~/.gemini/references/engram-protocol.md` (verbatim `protocolFull()`, no section markers) and inject the bootstrap stub under `gentle-ai:engram-protocol` in root; idempotency covered here too (spec: engram-protocol-injection Reference-File Emission)
+- [x] 2.2 GREEN: in `internal/components/engram/inject.go` default case, type-assert `SharedReferenceLayout`; when present write reference file + stub instead of inline body
+- [x] 2.3 [generated] regen `testdata/golden/engram-antigravity-rulesmd.golden` (6760 → 386 B); add `testdata/golden/engram-gemini-rulesmd.golden`, `testdata/golden/engram-gemini-referencefile.golden`, `testdata/golden/engram-antigravity-referencefile.golden` — gemini/antigravity pairs are byte-identical, confirming D3 convergence
+- [x] 2.4 (unplanned, required) `internal/components/delivery_guarantee_installed_test.go` — the issue-#1042 antigravity subtest asserted the delivery-guarantee wording on `GEMINI.md`; that body now lives in the reference file. Moved the assertions to `~/.gemini/references/engram-protocol.md` and added a root-points-at-reference assertion so the guarantee still has an unbroken path to the model.
 
 ## Phase 3: SDD Orchestrator Reference Wiring (PR3)
 

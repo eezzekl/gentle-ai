@@ -86,7 +86,8 @@ func assertRejectsOppositeFailureContract(t *testing.T, surface string, content 
 // installed outputs, one per protocol variant:
 //   - Claude Code CLAUDE.md — slim section (engram version above the
 //     Decision 1 floor, the surface where the bug was reproduced)
-//   - Antigravity GEMINI.md — full section
+//   - Antigravity ~/.gemini/references/engram-protocol.md — full section
+//     (the shared reference file; GEMINI.md only carries the pointer stub)
 //   - Codex engram-instructions.md — full + passive-capture concatenation
 func TestDeliveryGuarantee_InstalledOutputs(t *testing.T) {
 	t.Run("claude-slim", func(t *testing.T) {
@@ -109,6 +110,7 @@ func TestDeliveryGuarantee_InstalledOutputs(t *testing.T) {
 	t.Run("antigravity-full", func(t *testing.T) {
 		home := t.TempDir()
 		engram.SetLookPathForTest(t, "/opt/homebrew/bin/engram", "")
+		engram.SetUserHomeDirForTest(t, home)
 
 		result, err := engram.Inject(home, antigravityAdapter())
 		if err != nil {
@@ -118,9 +120,21 @@ func TestDeliveryGuarantee_InstalledOutputs(t *testing.T) {
 			t.Fatal("engram.Inject(antigravity) changed = false")
 		}
 
+		// The full protocol body for antigravity (and gemini-cli) is installed
+		// at ~/.gemini/references/engram-protocol.md, not inlined into
+		// GEMINI.md — the root only carries the pointer stub, because
+		// Antigravity truncates that root at 12,000 characters. The
+		// delivery-guarantee surface moved with the body.
+		referenceFile := readTestFile(t, filepath.Join(home, ".gemini", "references", "engram-protocol.md"))
+		assertDeliveryGuarantee(t, "antigravity engram-protocol.md (full)", referenceFile, installedFullFailureContract)
+		assertRejectsOppositeFailureContract(t, "antigravity engram-protocol.md (full)", referenceFile, installedFullFailureContract, fullPositiveFailureContract, fullOppositeFailureContract)
+
+		// The guarantee only reaches the model if the root actually routes to
+		// the file that states it, so the pointer is part of this contract.
 		rulesFile := readTestFile(t, filepath.Join(home, ".gemini", "GEMINI.md"))
-		assertDeliveryGuarantee(t, "antigravity GEMINI.md (full)", rulesFile, installedFullFailureContract)
-		assertRejectsOppositeFailureContract(t, "antigravity GEMINI.md (full)", rulesFile, installedFullFailureContract, fullPositiveFailureContract, fullOppositeFailureContract)
+		if !strings.Contains(string(rulesFile), "~/.gemini/references/engram-protocol.md") {
+			t.Errorf("antigravity GEMINI.md does not point at the installed protocol reference file; got:\n%s", rulesFile)
+		}
 	})
 
 	t.Run("codex-instructions", func(t *testing.T) {

@@ -40,6 +40,40 @@ type SharedReferenceLayout interface {
 	ReferencesDir(homeDir string) string
 }
 
+// engramReferenceFileName is the basename of the shared reference file that
+// carries the full protocol body for SharedReferenceLayout adapters.
+const engramReferenceFileName = "engram-protocol.md"
+
+// userHomeDir resolves the current user's home directory. It is a package-level
+// variable so tests can pin it, following the EngramLookPath precedent above.
+var userHomeDir = os.UserHomeDir
+
+// SetUserHomeDirForTest pins userHomeDir for the duration of a test and
+// restores the original afterwards. Exported so external test packages (e.g.
+// golden_test.go in components) can make the shared-reference layout resolve
+// against a temp home.
+func SetUserHomeDirForTest(t interface {
+	Helper()
+	Cleanup(func())
+}, home string) {
+	t.Helper()
+	orig := userHomeDir
+	userHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { userHomeDir = orig })
+}
+
+// homeAnchoredReferencePath returns the reference-file path the session
+// bootstrap stub actually advertises: the one anchored at the real user home.
+// renderSessionBootstrapStub names that location as a fixed string, so the
+// split layout is only safe where the written path resolves to it.
+func homeAnchoredReferencePath(layout SharedReferenceLayout) (string, bool) {
+	home, err := userHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return "", false
+	}
+	return filepath.Join(layout.ReferencesDir(home), engramReferenceFileName), true
+}
+
 // renderSessionBootstrapStub renders the short imperative stub written into
 // the root system prompt (under the existing "engram-protocol" marker) for
 // adapters that implement SharedReferenceLayout, in place of the full
@@ -569,6 +603,39 @@ func injectWithOptions(configHomeDir, promptDir string, adapter agents.Adapter, 
 		default:
 			promptPath := adapter.SystemPromptFile(promptDir)
 			protocolContent := protocolFor(adapter.Agent(), opts)
+
+			// Adapters exposing a shared reference layout (gemini-cli,
+			// antigravity) receive the full protocol body as a standalone
+			// file under ReferencesDir, and only the imperative
+			// session-bootstrap stub under the root marker. Both agents
+			// share one ~/.gemini/GEMINI.md, which Antigravity truncates at
+			// 12,000 characters — inlining the body there silently drops
+			// whatever follows it (design.md D1/D2).
+			//
+			// The split is taken ONLY when the file lands where the stub says
+			// it does. renderSessionBootstrapStub names an absolute
+			// home-anchored path and tells the agent not to resolve it against
+			// the project, so under a workspace-scoped install (promptDir is
+			// the workspace, not the home dir) the body would be written
+			// somewhere the pointer never sends the agent, silently costing
+			// the whole protocol. There the inline body stays: the 12,000-char
+			// budget is a property of the global ~/.gemini/GEMINI.md, not of a
+			// per-project one.
+			if layout, ok := adapter.(SharedReferenceLayout); ok {
+				referencePath := filepath.Join(layout.ReferencesDir(promptDir), engramReferenceFileName)
+				advertisedPath, hasHome := homeAnchoredReferencePath(layout)
+
+				if hasHome && filepath.Clean(advertisedPath) == filepath.Clean(referencePath) {
+					refWrite, refErr := filemerge.WriteFileAtomic(referencePath, []byte(protocolContent), 0o644)
+					if refErr != nil {
+						return InjectionResult{}, refErr
+					}
+					changed = changed || refWrite.Changed
+					files = append(files, referencePath)
+
+					protocolContent = renderSessionBootstrapStub()
+				}
+			}
 
 			existing, err := readFileOrEmpty(promptPath)
 			if err != nil {
