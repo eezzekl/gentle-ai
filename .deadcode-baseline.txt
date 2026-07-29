@@ -69,8 +69,8 @@ internal/components/gga/install.go	ShouldInstall
 internal/components/gga/runtime.go	RuntimeBinDir
 internal/components/mcp/inject.go	context7Args
 internal/components/sdd/boundedreview.go	ReviewExecutionContractFor
+internal/components/sdd/inject.go	SetUserHomeDirForTest
 internal/components/sdd/inject.go	injectClaudeModelAssignments
-internal/components/sdd/inject.go	renderSDDGateStub
 internal/components/sdd/inject.go	resolveClaudeModelAlias
 internal/components/sdd/read_assignments.go	ReadCurrentProfiles
 internal/installcmd/resolver.go	GitBashPath

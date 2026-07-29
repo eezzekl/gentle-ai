@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/gentleman-programming/gentle-ai/v2/internal/agents"
@@ -74,6 +75,14 @@ type InjectOptions struct {
 	// inject into SDD phase sub-agent prompts. Empty means disabled; normal SDD
 	// installs must leave it empty unless the Community Tool path enabled CodeGraph.
 	CodeGraphGuidanceMarkdown string
+
+	// SelectedAgents lists every agent this install or sync is writing, so the
+	// shared ~/.gemini/references/sdd-orchestrator.md gets deterministic content
+	// when gemini-cli and antigravity are both selected: they share that one
+	// file, and the two orchestrator assets are not reconcilable
+	// (see referenceOrchestratorAgent and design.md D4). Empty means "no
+	// selection reported" and the injected adapter's own asset is used.
+	SelectedAgents []model.AgentID
 }
 
 func (opts InjectOptions) orchestratorPolicyRenderOptions() OrchestratorRenderOptions {
@@ -138,6 +147,80 @@ type codexModelResolver interface {
 // above).
 type SharedReferenceLayout interface {
 	ReferencesDir(homeDir string) string
+}
+
+// sddReferenceFileName is the basename of the shared reference file that carries
+// the per-agent orchestrator body for SharedReferenceLayout adapters.
+const sddReferenceFileName = "sdd-orchestrator.md"
+
+// userHomeDir resolves the current user's home directory. It is a package-level
+// variable so tests can pin it, mirroring the engram component.
+var userHomeDir = os.UserHomeDir
+
+// SetUserHomeDirForTest pins userHomeDir for the duration of a test and restores
+// the original afterwards. Exported so external test packages (e.g. golden_test.go
+// in components) can make the shared-reference layout resolve against a temp home.
+func SetUserHomeDirForTest(t interface {
+	Helper()
+	Cleanup(func())
+}, home string) {
+	t.Helper()
+	orig := userHomeDir
+	userHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { userHomeDir = orig })
+}
+
+// homeAnchoredReferencePath returns the reference-file path the gate stub
+// actually advertises: the one anchored at the real user home.
+// renderSDDGateStub names that location as a fixed string, so the split layout
+// is only safe where the written path resolves to it.
+func homeAnchoredReferencePath(layout SharedReferenceLayout) (string, bool) {
+	home, err := userHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return "", false
+	}
+	return filepath.Join(layout.ReferencesDir(home), sddReferenceFileName), true
+}
+
+// referenceOrchestratorAgent resolves whose orchestrator asset is written to the
+// shared ~/.gemini/references/sdd-orchestrator.md. gemini-cli and antigravity
+// write the same file, and the assets are not reconcilable: the antigravity body
+// mandates Mission Control define_subagent/invoke_subagent delegation the generic
+// gemini body has no tools for. Selecting by "last agent synced" would let sync
+// order decide which orchestrator agy obeys, so antigravity takes priority
+// whenever it is selected — it is the agent whose 12,000-character truncation
+// motivates the split at all (design.md D4).
+func referenceOrchestratorAgent(adapter model.AgentID, selected []model.AgentID) model.AgentID {
+	if slices.Contains(selected, model.AgentAntigravity) {
+		return model.AgentAntigravity
+	}
+	return adapter
+}
+
+// preservedOrchestratorAgent protects the shared reference file from being
+// downgraded. SelectedAgents only reports the agents of the CURRENT pass, so a
+// later narrower run (`agy sync --agents gemini` on a machine where antigravity
+// is also installed) would otherwise overwrite antigravity's body with the
+// generic gemini one and strip the Mission Control delegation antigravity
+// depends on — for an agent that run never touched. Whenever the file already
+// holds the antigravity asset, antigravity keeps it: that is the same locked
+// priority referenceOrchestratorAgent applies, just resolved from what is on
+// disk instead of from the current selection.
+//
+// Note the cost of that choice: uninstall does NOT delete the reference file.
+// The Uninstall/Revert Safety requirement keeps orphans on disk and inert, so
+// nothing here expires. Once the file holds the antigravity asset it keeps it
+// until the user removes the file by hand, even after antigravity is genuinely
+// retired. Pinning stale-but-working content was judged the smaller harm than
+// silently stripping the Mission Control delegation from a live antigravity.
+func preservedOrchestratorAgent(selected model.AgentID, existingReference string) model.AgentID {
+	if selected == model.AgentAntigravity || existingReference == "" {
+		return selected
+	}
+	if existingReference == renderSDDOrchestratorAsset(model.AgentAntigravity) {
+		return model.AgentAntigravity
+	}
+	return selected
 }
 
 // renderSDDGateStub renders the short imperative stub written into the root
@@ -2681,6 +2764,48 @@ func injectFileAppend(homeDir string, adapter agents.Adapter, opts InjectOptions
 		}
 	}
 
+	files := []string{promptPath}
+	changed := false
+
+	// Adapters exposing a shared reference layout (gemini-cli, antigravity)
+	// receive the full orchestrator body as a standalone file under
+	// ReferencesDir, and only the imperative gate stub under the root marker.
+	// Both agents share one ~/.gemini/GEMINI.md, which Antigravity truncates at
+	// 12,000 characters — inlining a 32-35KB orchestrator body there silently
+	// drops whatever follows it (design.md D1/D2).
+	//
+	// The split is taken ONLY when the file lands where the stub says it does.
+	// renderSDDGateStub names an absolute home-anchored path and tells the agent
+	// not to resolve it against the project, so under a workspace-scoped install
+	// (homeDir is the workspace, not the home dir) the body would be written
+	// somewhere the pointer never sends the agent, silently costing the whole
+	// orchestrator contract. There the inline body stays: the 12,000-character
+	// budget is a property of the global ~/.gemini/GEMINI.md, not of a
+	// per-project one.
+	if layout, ok := adapter.(SharedReferenceLayout); ok {
+		referencePath := filepath.Join(layout.ReferencesDir(homeDir), sddReferenceFileName)
+		advertisedPath, hasHome := homeAnchoredReferencePath(layout)
+
+		if hasHome && filepath.Clean(advertisedPath) == filepath.Clean(referencePath) {
+			existingReference, readErr := readFileOrEmpty(referencePath)
+			if readErr != nil {
+				return InjectionResult{}, readErr
+			}
+
+			referenceAgent := referenceOrchestratorAgent(adapter.Agent(), opts.SelectedAgents)
+			referenceAgent = preservedOrchestratorAgent(referenceAgent, existingReference)
+
+			refWrite, refErr := filemerge.WriteFileAtomic(referencePath, []byte(renderSDDOrchestratorAsset(referenceAgent)), 0o644)
+			if refErr != nil {
+				return InjectionResult{}, refErr
+			}
+			changed = changed || refWrite.Changed
+			files = append(files, referencePath)
+
+			content = renderSDDGateStub()
+		}
+	}
+
 	// If there is a bare (un-marked) legacy orchestrator block, strip it first
 	// so InjectMarkdownSection can re-inject the current canonical content.
 	if hasLegacyBareOrchestrator(existing) {
@@ -2693,8 +2818,9 @@ func injectFileAppend(homeDir string, adapter agents.Adapter, opts InjectOptions
 	if err != nil {
 		return InjectionResult{}, err
 	}
+	changed = changed || writeResult.Changed
 
-	return InjectionResult{Changed: writeResult.Changed, Files: []string{promptPath}}, nil
+	return InjectionResult{Changed: changed, Files: files}, nil
 }
 
 func hasLegacyBareOrchestrator(content string) bool {

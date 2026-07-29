@@ -1673,6 +1673,7 @@ func (s componentApplyStep) Run() error {
 				StrictTDD:                   s.selection.StrictTDD,
 				Profiles:                    s.selection.Profiles,
 				CodeGraphGuidanceMarkdown:   codeGraphGuidanceMarkdownForSDD(s.homeDir, s.selection.CommunityTools),
+				SelectedAgents:              selectedAgentIDs(adapters),
 			}
 			opts.IncludeOpenCodeBackgroundPolicy = s.backgroundPolicy && adapter.Agent() == model.AgentOpenCode
 			if _, err := injectSDD(targetDir, adapter, s.selection.SDDMode, opts); err != nil {
@@ -2394,6 +2395,19 @@ func componentInjectionDir(homeDir, workspaceDir string, adapter agents.Adapter)
 	return componentInjectionDirScoped(homeDir, workspaceDir, ScopeGlobal, adapter)
 }
 
+// selectedAgentIDs lists the agents an install or sync pass writes for. The SDD
+// component needs the whole set, not just the adapter it is currently injecting:
+// gemini-cli and antigravity share one ~/.gemini/references/sdd-orchestrator.md,
+// so the content has to be chosen from the selection rather than from whichever
+// agent happens to sync last (see sdd.referenceOrchestratorAgent, design.md D4).
+func selectedAgentIDs(adapters []agents.Adapter) []model.AgentID {
+	ids := make([]model.AgentID, 0, len(adapters))
+	for _, adapter := range adapters {
+		ids = append(ids, adapter.Agent())
+	}
+	return ids
+}
+
 // routingGuidanceDir resolves the installation root routing guidance is
 // delivered under. Agents that deliver through the managed orchestrator prompt
 // only ever load the home-level settings document, so a workspace-scoped
@@ -2716,8 +2730,9 @@ func engramInstallCommand(agentIDs []model.AgentID) string {
 // antigravityCollisionCheck returns a soft verify check that warns the user
 // when Antigravity and Gemini CLI are selected together. These agents
 // intentionally share ~/.gemini/GEMINI.md because Antigravity uses a
-// Gemini-compatible prompt surface; the last synced SDD orchestrator owns the
-// shared gentle-ai:sdd-orchestrator section.
+// Gemini-compatible prompt surface. Antigravity owns the shared
+// gentle-ai:sdd-orchestrator section whenever it is selected — the winner is
+// fixed by that priority, not by which agent synced last.
 func antigravityCollisionCheck(agents []model.AgentID) []verify.Check {
 	hasAntigravitySurface := false
 	hasGemini := false
@@ -2741,7 +2756,7 @@ func antigravityCollisionCheck(agents []model.AgentID) []verify.Check {
 				// refusal:by-design human-authority: choosing which of the two colliding agents stays active on this shared surface is a deliberate human decision; no command can make that choice for the operator
 				return fmt.Errorf(
 					"Antigravity and Gemini CLI write rules to ~/.gemini/GEMINI.md and share reference files under ~/.gemini/references/\n" +
-						"Antigravity intentionally uses the Gemini-compatible global prompt surface; the last synced SDD orchestrator owns the shared gentle-ai:sdd-orchestrator section.\n" +
+						"Antigravity intentionally uses the Gemini-compatible global prompt surface; whenever Antigravity is selected it owns the shared gentle-ai:sdd-orchestrator section, regardless of which agent synced last.\n" +
 						"Prefer Antigravity for new installs; keep Gemini CLI selected only when you intentionally want that legacy prompt to be the active one.",
 				)
 			},

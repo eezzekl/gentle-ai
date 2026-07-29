@@ -236,6 +236,10 @@ func TestGoldenSDD_Cursor(t *testing.T) {
 func TestGoldenSDD_Gemini(t *testing.T) {
 	home := t.TempDir()
 
+	// Pin the temp dir as the user home so the shared reference layout applies;
+	// the split is deliberately skipped when the target is not the home dir.
+	sdd.SetUserHomeDirForTest(t, home)
+
 	result, err := sdd.Inject(home, geminiAdapter(), "")
 	if err != nil {
 		t.Fatalf("sdd.Inject(gemini) error = %v", err)
@@ -244,9 +248,14 @@ func TestGoldenSDD_Gemini(t *testing.T) {
 		t.Fatalf("sdd.Inject(gemini) changed = false")
 	}
 
-	// Gemini writes SDD orchestrator to ~/.gemini/GEMINI.md.
+	// GEMINI.md carries only the SDD gate stub under the sdd-orchestrator
+	// marker; the full orchestrator body lives in the shared reference file.
 	geminiMD := readTestFile(t, filepath.Join(home, ".gemini", "GEMINI.md"))
 	assertGolden(t, "sdd-gemini-geminimd.golden", geminiMD)
+
+	// With no selection reported, the gemini pass writes the gemini asset.
+	referenceFile := readTestFile(t, filepath.Join(home, ".gemini", "references", "sdd-orchestrator.md"))
+	assertGolden(t, "sdd-gemini-referencefile.golden", referenceFile)
 
 	// Golden-check a representative SDD skill file.
 	skillInit := readTestFile(t, filepath.Join(home, ".gemini", "skills", "sdd-init", "SKILL.md"))
@@ -889,6 +898,8 @@ func TestGoldenCombined_Windsurf(t *testing.T) {
 func TestGoldenSDD_Antigravity(t *testing.T) {
 	home := t.TempDir()
 
+	sdd.SetUserHomeDirForTest(t, home)
+
 	result, err := sdd.Inject(home, antigravityAdapter(), "")
 	if err != nil {
 		t.Fatalf("sdd.Inject(antigravity) error = %v", err)
@@ -897,9 +908,15 @@ func TestGoldenSDD_Antigravity(t *testing.T) {
 		t.Fatalf("sdd.Inject(antigravity) changed = false")
 	}
 
-	// Antigravity writes SDD orchestrator to ~/.gemini/GEMINI.md (StrategyAppendToFile).
+	// Antigravity writes the same shared ~/.gemini/GEMINI.md gemini does
+	// (StrategyAppendToFile), and both carry only the agent-neutral gate stub —
+	// so this golden must stay byte-identical to sdd-gemini-geminimd.golden
+	// (design.md D3). The orchestrator body differs and lives in the reference file.
 	rulesFile := readTestFile(t, filepath.Join(home, ".gemini", "GEMINI.md"))
 	assertGolden(t, "sdd-antigravity-rulesmd.golden", rulesFile)
+
+	referenceFile := readTestFile(t, filepath.Join(home, ".gemini", "references", "sdd-orchestrator.md"))
+	assertGolden(t, "sdd-antigravity-referencefile.golden", referenceFile)
 
 	// Golden-check a representative SDD skill file.
 	skillInit := readTestFile(t, filepath.Join(home, ".gemini", "antigravity-cli", "skills", "sdd-init", "SKILL.md"))

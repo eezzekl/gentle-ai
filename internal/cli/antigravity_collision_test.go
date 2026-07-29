@@ -29,7 +29,12 @@ func TestAntigravityCollisionCheckIncludesGeminiCLI(t *testing.T) {
 	message := err.Error()
 	for _, want := range []string{
 		"Antigravity intentionally uses the Gemini-compatible global prompt surface",
-		"last synced SDD orchestrator owns the shared gentle-ai:sdd-orchestrator section",
+		// The winner is fixed by referenceOrchestratorAgent's antigravity priority,
+		// not by sync order. Pinning the phrase keeps the operator-facing message
+		// from drifting back to the last-writer-wins wording it used to carry,
+		// which told operators to control the outcome with something that does
+		// not control it.
+		"whenever Antigravity is selected it owns the shared gentle-ai:sdd-orchestrator section, regardless of which agent synced last",
 		"Prefer Antigravity for new installs",
 		"~/.gemini/references/",
 	} {

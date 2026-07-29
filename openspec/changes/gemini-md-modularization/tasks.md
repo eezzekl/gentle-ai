@@ -53,12 +53,12 @@ Sequential dependency (PR1 → {PR2,PR3} → PR4) fits **feature-branch-chain** 
 
 ## Phase 3: SDD Orchestrator Reference Wiring (PR3)
 
-- [ ] 3.1 RED: sdd unit test — `SelectedAgents=[gemini]` → gemini asset selected; `[gemini,antigravity]` and `[antigravity]` → antigravity asset (spec: sdd-orchestrator-assets Per-Agent Content Selection, D4)
-- [ ] 3.2 GREEN: add `SelectedAgents []model.AgentID` to `InjectOptions`; add selection helper in `internal/components/sdd/inject.go`
-- [ ] 3.3 GREEN: populate `SelectedAgents` at the `sdd.InjectOptions` build sites — `internal/cli/sync.go:944` (ComponentSDD case) and `internal/cli/run.go:1374`
-- [ ] 3.4 RED: golden test — `sdd.Inject` for gemini/antigravity writes selected asset to `~/.gemini/references/sdd-orchestrator.md`, root gets only gate stub under `gentle-ai:sdd-orchestrator` marker (spec: Orchestrator Reference File Emission)
-- [ ] 3.5 GREEN: rewire `injectFileAppend` (`internal/components/sdd/inject.go:2048`) to type-assert `SharedReferenceLayout` and branch to reference-file + stub path
-- [ ] 3.6 [generated] regen `testdata/golden/sdd-gemini-geminimd.golden`, `testdata/golden/sdd-antigravity-rulesmd.golden`; add `testdata/golden/sdd-gemini-referencefile.golden`, `testdata/golden/sdd-antigravity-referencefile.golden`
+- [x] 3.1 RED: `internal/components/sdd/reference_file_test.go` — `referenceOrchestratorAgent`: `[gemini]` → gemini asset; `[gemini,antigravity]`, `[antigravity]`, and antigravity anywhere in the list → antigravity asset; empty selection → injected adapter's own asset (spec: sdd-orchestrator-assets Per-Agent Content Selection, D4)
+- [x] 3.2 GREEN: add `SelectedAgents []model.AgentID` to `InjectOptions`; add `referenceOrchestratorAgent` + `sddReferenceFileName`, `userHomeDir`/`SetUserHomeDirForTest`, `homeAnchoredReferencePath` in `internal/components/sdd/inject.go` (same home-anchoring idiom PR2 introduced in engram)
+- [x] 3.3 GREEN: populate `SelectedAgents` at both `sdd.InjectOptions` build sites — `internal/cli/sync.go` (ComponentSDD case) and `internal/cli/run.go` (ComponentSDD case); required a new `selectedAgentIDs(adapters)` helper in `internal/cli/run.go` (no adapters→IDs mapper existed). Guarded by an unplanned but required end-to-end wiring test, `internal/cli/sdd_reference_selection_test.go`: without the population the unit-level D4 selection is dead code, since every real caller passes through these two sites.
+- [x] 3.4 RED: golden tests in `internal/components/golden_test.go` (`TestGoldenSDD_Gemini`, `TestGoldenSDD_Antigravity`) + behavior tests in `reference_file_test.go` — reference file holds the selected asset verbatim with no section markers, root carries only the gate stub under `gentle-ai:sdd-orchestrator`; workspace-scoped inline fallback, idempotency, and marker-level legacy migration covered too (spec: Orchestrator Reference File Emission)
+- [x] 3.5 GREEN: rewire `injectFileAppend` to type-assert `SharedReferenceLayout` and branch to reference-file + stub path, taken ONLY when the written path equals the home-anchored path the stub advertises; `InjectionResult.Files` now reports the reference file as well
+- [x] 3.6 [generated] regen `testdata/golden/sdd-gemini-geminimd.golden` and `testdata/golden/sdd-antigravity-rulesmd.golden` (both ~33KB → 349 B, and now byte-identical to each other, confirming D3 root convergence); add `testdata/golden/sdd-gemini-referencefile.golden` (40,110 B) and `testdata/golden/sdd-antigravity-referencefile.golden` (42,777 B) — these two differ by design (D4: the assets are not reconcilable)
 
 ## Phase 4: Budget Warning, Migration & Convergence (PR4)
 
