@@ -4,7 +4,7 @@
 
 Split today's single coupled persona axis (`gentleman | gentleman-neutral-artifacts | neutral | custom`) into TWO independent axes — personality **style** (`gentle | neutral | custom`) and **language/region** — and persist both across installs and syncs.
 
-Today personality and regional voice are tangled in one selector, with Rioplatense voseo hardcoded inside each persona asset's `## Language` section. The `gentleman-neutral-artifacts` hybrid is the symptom: it exists only to keep the gentleman teaching voice while forcing English artifacts, but it injects content IDENTICAL to `gentleman` (verified: both land in the same `personaContent()` default case, and the gentleman asset already mandates English artifacts). A user who wants the gentle mentor style but a Mexican voice — or a neutral style with a Colombian voice — cannot express that. The axes are conceptually orthogonal but structurally fused.
+Today personality and regional voice are tangled in one selector, with Rioplatense voseo hardcoded inside each persona asset's `## Language` section. The `gentleman-neutral-artifacts` hybrid is the symptom: it exists only to keep the gentleman teaching voice while forcing English artifacts, but it injects content IDENTICAL to `gentleman` (verified: both land in the same `personaContent()` default case). Issue #1702 (defect 1) classifies that identity as a **bug**, with forensic evidence: "the alias resolves to full gentleman behavior", so "a persona named 'neutral' installs voseo conversation". A user who wants the gentle mentor style but a Mexican voice — or a neutral style — cannot express either without hitting a selector whose name misdescribes what it installs. The axes are conceptually orthogonal but structurally fused.
 
 After this change a user picks a personality style and, independently, a reply language/region. The regional voice is injected as ONE composed directive line built in Go from a curated region map plus free text — no per-region asset files, no runtime template engine.
 
@@ -14,14 +14,14 @@ These were resolved in the design and product-decision rounds and are encoded he
 
 | # | Decision |
 |---|----------|
-| 1 | Drop `gentleman-neutral-artifacts` (verified zero behavioral delta). The style axis becomes `gentle | neutral | custom`. |
+| 1 | Drop `gentleman-neutral-artifacts`. The style axis becomes `gentle \| neutral \| custom`. Its output was identical to `gentleman`, which #1702 defect 1 documents as the defect — a selector named "neutral" that installs voseo — not as evidence the variant was harmless. |
 | 2 | Language/region is a SECOND axis: a TUI radio list of curated regions + an always-present "Idioma del usuario" option + an always-present free-text "Otro…" box. The injected language directive is ONE composed line appended in Go. No per-region `.md` assets. Curated regions live in a Go `map[RegionID]Label`. |
 | 3 | Curated regions v1: Argentina, Mexico, Colombia, Spain, Chile. Labels are gentilicio-first with the regional variant in parens: "Argentino (rioplatense, voseo)", "Mexicano (tuteo)", "Colombiano (paisa)", "Español (España)", "Chileno". Sub-national dialects (e.g. yucateco) go through free text, NOT curated radios. |
 | 4 | `artifactsInEnglish` becomes a CHECKBOX in the language section (not a persona variant). Default ON (opt-out) — matches current behavior. It toggles which artifact-language directive is injected. |
 | 5 | Default region for a fresh `gentle` install = Rioplatense (voseo) → preserves today's behavior exactly. |
-| 6 | `neutral` style ALSO shows the region selector (axes are orthogonal). `custom` keeps "no injection / follow user" → no region selector for custom. |
+| 6 | `neutral` style is REGIONLESS — it is the absence of a regional voice, not a style paired with a neutral region. Only `gentle` shows the region selector. `custom` keeps "no injection / follow user" → no region selector either. `artifactsInEnglish` is forced `true` for `neutral` (the pre-change `neutral` asset already mandated English artifacts unconditionally). |
 | 7 | Persist `region` (id or free-text string) + `artifactsInEnglish` (bool) in `.gentle-ai/state.json` on the same mechanism as the existing `persona` field; sync regenerates via `InjectForSync`; `MergeAgents` must carry both new fields. |
-| 8 | Back-compat: existing `"persona": "gentleman-neutral-artifacts"` and `"persona": "gentleman"` in state.json MUST migrate to `persona=gentle + artifactsInEnglish=true` (explicit + tested) so users do not silently degrade to neutral. |
+| 8 | Back-compat, split by value: `"persona": "gentleman"` MUST migrate to `gentle + region=argentina + artifactsInEnglish=true` (explicit + tested) so the teaching voice is not silently lost. `"persona": "gentleman-neutral-artifacts"` MUST migrate to `neutral + no region + artifactsInEnglish=true`, converging with PR #1712's remap and resolving #1702 defect 1. The two legacy values do NOT share a target. |
 
 ## Goals
 
@@ -55,7 +55,7 @@ The full verified touchpoint set from the exploration:
 | `internal/components/persona/inject.go` | Compose the one-line language directive into persona content; simplify `isGentlemanConversationPersona()` to gentle; route artifacts-in-English to the right directive; output-style dispatch handles the renamed/new persona; Kimi module writes the composed line. |
 | Persona assets (`claude`, `generic`, `opencode`, `kimi`, `kiro`, `hermes`) | Make the `gentle` base region-neutral (strip the hardcoded `## Language` Rioplatense line) so the composed directive is the single source of regional voice. |
 | Output-style assets (Claude gentle/neutral, Kimi twins) | Strip the hardcoded Language Rules section so they govern tone/personality only (the composed directive lives in persona content). |
-| TUI region screen + checkbox (`internal/tui/screens/persona.go`, `model.go`, `router.go`, `review.go`) | Drop `gentleman-neutral-artifacts`; add region radio list + "Idioma del usuario" + "Otro…" free text + artifacts-in-English checkbox; route gentle/neutral → region screen, skip it for custom; review shows region + artifacts flag. |
+| TUI region screen + checkbox (`internal/tui/screens/persona.go`, `model.go`, `router.go`, `review.go`) | Drop `gentleman-neutral-artifacts`; add region radio list + "Idioma del usuario" + "Otro…" free text + artifacts-in-English checkbox; route `gentle` → region screen, skip it for `neutral` and `custom`; review shows region + artifacts flag. |
 | `openspec/specs/persona-behavior-contract/spec.md` | Update wording: persona axis is `gentle | neutral | custom`; regional voice is the language axis, not a persona variant; artifact-language is the checkbox. |
 | `internal/components/uninstall/service.go` | Remove the output-style file under its new name (`gentle.md` if renamed); no per-region files exist to remove. |
 | Tests | Update/replace persona-language contract tests, preset tests, inject tests, state round-trip, and add explicit migration tests. |
@@ -74,7 +74,7 @@ Treat style and language/region as two orthogonal selections that converge at in
 2. **Compose, don't multiply**: `personaContent()` returns a region-neutral persona body and appends ONE composed directive built from the region (e.g. Argentina → `Reply to the user in warm, natural Argentine Spanish (Rioplatense, voseo).`). Free text and "Idioma del usuario" feed the same template (free text raw; "Idioma del usuario" → follow how the user writes, no forced region). The artifacts-in-English checkbox toggles which artifact-language directive is injected.
 3. **One code path for all agents**: build-time composition for non-Kimi agents (append to the persona string before write); the existing Kimi Jinja module writes the same composed line. No runtime templating added.
 4. **Persist on the proven rail**: `region` + `artifactsInEnglish` live in `state.json` next to `persona`; `MergeAgents` carries them; sync regenerates via `InjectForSync`.
-5. **Migrate explicitly**: old `gentleman` and `gentleman-neutral-artifacts` persona values map to `gentle + artifactsInEnglish=true` with a tested migration case, so no existing user silently degrades to neutral.
+5. **Migrate explicitly**: `gentleman` maps to `gentle + argentina + artifactsInEnglish=true`; `gentleman-neutral-artifacts` maps to `neutral + no region + artifactsInEnglish=true`. Both are tested migration cases. No user silently degrades, and the alias finally does what its name says.
 
 ## Recommended first slice
 
@@ -118,7 +118,9 @@ These are resolved enough to propose but their exact mechanics belong to design:
 
 | Risk | Mitigation |
 |------|------------|
-| Migration gap: old `gentleman-neutral-artifacts`/`gentleman` state silently degrades to neutral, losing the teaching voice. | Explicit, tested migration case mapping both to `gentle + artifactsInEnglish=true`, shipped in the first slice. |
+| Migration gap: old `gentleman` state silently degrades to neutral, losing the teaching voice. | Explicit, tested migration case mapping it to `gentle + argentina + artifactsInEnglish=true`, shipped in the first slice. |
+| A `gentleman-neutral-artifacts` user loses the mentor voice — this migration is a deliberate behavior change, not a bug. | Disclosed, not mitigated: #1702 defect 1 classifies the mentor voice under that name as the defect. Release notes must state it plainly; the style is one re-selection away. |
+| Merge order with PR #1712 changes the final `state.json` for the same legacy value. | Removed by construction: both migrations target `neutral`. Enforced by a cross-sequence test asserting both orders converge. |
 | `personaContent()` signature change ripples to all callers/tests. | Land the signature change with Claude/generic coverage first; treat remaining agents as mechanical follow-ups against the stabilized signature. |
 | Output-style filename migration (`gentleman.md` → `gentle.md`) leaves orphaned files on uninstall/sync. | Keep rename-vs-strip a design decision; if renamed, update uninstall to remove both old and new names; cover with sync/uninstall tests. |
 | `artifactsInEnglish` is effectively always-on, making the checkbox feel inert. | Frame it as an explicit opt-out in design; verify each state injects a distinct artifact-language directive. |
@@ -139,9 +141,10 @@ This is prompt/config/state behavior, so rollback is largely file-level:
 ## Success criteria
 
 - [ ] Personality style (`gentle | neutral | custom`) and language/region are selected independently in the TUI and persisted in `state.json`.
-- [ ] `gentleman-neutral-artifacts` is removed; old state values migrate to `gentle + artifactsInEnglish=true` (tested).
+- [ ] `gentleman-neutral-artifacts` is removed; `gentleman` migrates to `gentle + argentina + artifactsInEnglish=true` and `gentleman-neutral-artifacts` migrates to `neutral + no region + artifactsInEnglish=true` (both tested).
+- [ ] Migration is order-independent with respect to PR #1712: applying #1712 first or this change first converges on the same `state.json` (tested).
 - [ ] Fresh `gentle` install defaults to Rioplatense (voseo) and reproduces today's behavior exactly.
-- [ ] `neutral` shows the region selector; `custom` does not.
+- [ ] Only `gentle` shows the region selector; `neutral` and `custom` do not.
 - [ ] Curated regions v1 (AR/MX/CO/ES/CL) render with the gentilicio-first labels; "Idioma del usuario" and free-text "Otro…" are always present.
 - [ ] The regional voice is injected as one composed directive line built in Go; no per-region asset files exist.
 - [ ] `artifactsInEnglish` is a checkbox defaulting ON; unticking it injects the in-language artifact directive.

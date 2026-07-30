@@ -8,7 +8,7 @@ Split the coupled persona axis into two orthogonal axes — **style** (`gentle |
 2. **Compose**: `personaContent()` returns a region-NEUTRAL persona body; a new `composeLanguageDirective(region, artifactsInEnglish)` appends ONE language line. Same line feeds every agent.
 3. **Persist**: `InstallState` gains `Region string` + `ArtifactsInEnglish bool`; `MergeAgents` carries both; migration maps legacy persona values explicitly (no zero-value traps).
 4. **Inject**: build-time append for all non-Kimi agents; Kimi gets the directive as a dedicated `language.md` Jinja module. Output-style assets become language-agnostic (single source of truth = persona content).
-5. **Select**: TUI gains a region screen (radios + "Idioma del usuario" + free text) and an artifacts-in-English checkbox; `gentle`/`neutral` route through it, `custom` skips it.
+5. **Select**: TUI gains a region screen (radios + "Idioma del usuario" + free text) and an artifacts-in-English checkbox; only `gentle` routes through it. `neutral` is regionless by definition and `custom` injects nothing, so both skip it.
 
 ## The 4 open decisions (RESOLVED)
 
@@ -97,6 +97,35 @@ If we rename the written file to `gentle.md` and the settings value to `"Gentle"
 
 **Rejected**: Embed the directive in `persona.md`. Rejected for re-coupling the axes for a single agent and breaking architectural symmetry.
 
+### Decision 5 — `neutral` is REGIONLESS; `gentleman-neutral-artifacts` migrates to `neutral`
+
+**Chosen**: `neutral` carries no region. It is not "a style that happens to have picked a neutral region" — it is the absolute absence of a regional voice. Consequently the legacy `gentleman-neutral-artifacts` value migrates to `neutral` (no region, `artifactsInEnglish=true`), NOT to `gentle + Rioplatense`.
+
+**This reverses the earlier position** in this document (the migration matrix previously converged `gentleman-neutral-artifacts` with `gentleman` and asserted byte-identical output "proving the hybrid was a no-op"). That assertion is now known to be false.
+
+**Rationale**:
+
+1. **The hybrid was a bug, not a no-op — with forensic evidence.** Issue #1702 (defect 1) documents that "the alias resolves to full gentleman behavior" and that "a persona named 'neutral' installs voseo conversation". The earlier design read the identical `personaContent()` default case and concluded "zero behavioral delta, therefore harmless"; #1702 read the same fact and concluded "the name promises neutral and the tool delivers voseo, therefore broken". #1702 is right: identical output is precisely the defect when one of the two names says *neutral*.
+2. **`neutral` predates the alias as the explicit "no regionalism" option.** Restoring `neutral` as an absolute restores the original semantics; the alias was the workaround. The name itself carries the contract — a `neutral` that asks the user to pick a region contradicts its own label.
+3. **It converges with PR #1712 instead of fighting it.** #1712 remaps `gentleman-neutral-artifacts` → `neutral`. Under the earlier position the two migrations disagreed about the same legacy value, so the merge order changed the final `state.json`. Under this decision both migrations name the same target, and **either merge order converges on the identical end state** (see R2 in the spec delta). That removes the sequencing conflict entirely rather than negotiating it.
+
+**Consequences that follow by construction**:
+
+- `composeLanguageDirective` receives an empty region for `neutral` and composes **no regional-voice clause** — only the artifacts clause. Legacy `neutral` behaved exactly this way (no regional voice, English artifacts), so this is behavior-preserving.
+- `artifactsInEnglish` is **forced `true` for `neutral`** and is not user-configurable there. This is not a new restriction: the pre-change `neutral` asset already mandated English artifacts unconditionally. It is also what makes `gentleman-neutral-artifacts` → `neutral` behavior-preserving on the artifacts axis — the one thing that alias genuinely delivered.
+- The TUI language/region screen is reachable from `gentle` only. `neutral` and `custom` skip it.
+- `normalizePersona` aliases split: `gentleman` → `gentle`, `gentleman-neutral-artifacts` → `neutral`. They no longer share a target.
+- `isGentlePersona` must return **false** for `gentleman-neutral-artifacts`. Returning true would keep routing that alias to the Gentleman output-style — the exact defect #1702 reported.
+
+**Tradeoffs**:
+- (+) Aligns with an approved, evidence-backed bug report instead of contradicting it.
+- (+) Merge-order independence with #1712 is a structural property, not a test-enforced coincidence.
+- (+) `neutral` becomes explainable in one sentence with no caveats.
+- (−) A user who picked `gentleman-neutral-artifacts` *wanting* the mentor voice loses it on migration. Accepted: they were relying on behavior their selection's own name disclaimed, and #1702 classifies that behavior as the bug. The style remains one selection away.
+- (−) `neutral` cannot be combined with a curated region. Accepted by definition; a user wanting "neutral-ish voice, Mexican Spanish" picks `gentle` + `mexico`, or uses free text.
+
+**Rejected**: Keep `neutral` on the region axis with a `user-language` default. Rejected because it re-creates the naming lie #1702 filed — a "neutral" persona holding a region field — and because it leaves the #1712 sequencing conflict unresolved.
+
 ## Component map and data flow
 
 ```
@@ -139,12 +168,12 @@ If we rename the written file to `gentle.md` and the settings value to `"Gentle"
 | Directive builder | `internal/model` (new func `composeLanguageDirective`) | Pure func: `(region, artifactsInEnglish) → string`. Region map → directive; free text → raw; "Idioma del usuario" → follow-user clause. Appends the artifacts clause. |
 | Selection | `internal/model/selection.go` | Add `Region string`, `ArtifactsInEnglish bool`. |
 | State | `internal/state/state.go` | Add `Region string json:"region,omitempty"`, `ArtifactsInEnglish bool json:"artifactsInEnglish"` (NO omitempty). `MergeAgents` carries both. |
-| Validation | `internal/cli/validate.go` | `normalizePersona()` accepts `gentle|neutral|custom` + back-compat aliases `gentleman`, `gentleman-neutral-artifacts` → `gentle`. |
+| Validation | `internal/cli/validate.go` | `normalizePersona()` accepts `gentle\|neutral\|custom` + back-compat aliases `gentleman` → `gentle` and `gentleman-neutral-artifacts` → `neutral` (Decision 5; the two aliases do NOT share a target). |
 | Sync + migration | `internal/cli/sync.go` | `applyResolvedPersona()` migration matrix (below); `BuildSyncSelection` loads `Region` + `ArtifactsInEnglish`. |
-| Injection | `internal/components/persona/inject.go` | `stripLanguageSection()` + append `composeLanguageDirective()`; `isGentlemanConversationPersona()` → `isGentlePersona()` (matches `PersonaGentle`); Kimi `language.md` module; output-style dispatch unchanged filenames. |
+| Injection | `internal/components/persona/inject.go` | `stripLanguageSection()` + append `composeLanguageDirective()`; `isGentlemanConversationPersona()` → `isGentlePersona()` (matches `PersonaGentle` and the `gentleman` alias ONLY — never `gentleman-neutral-artifacts`, per Decision 5); Kimi `language.md` module; output-style dispatch unchanged filenames. |
 | Persona assets | `internal/assets/{claude,generic}/persona-gentleman.md` (slice 1) | Strip `## Language` section only. Other agents deferred. |
 | Output-style assets | `internal/assets/claude/output-style-gentleman.md`, `output-style-neutral.md` (slice 1) | Strip `## Language Rules` section; keep `## Persona Scope`. |
-| TUI | `internal/tui/screens/persona.go`, NEW `persona_language.go`, `model.go`, `router.go`, `screens/review.go` | Drop hybrid option; add region screen + checkbox; route gentle/neutral → language screen, custom skips; review shows region + flag. |
+| TUI | `internal/tui/screens/persona.go`, NEW `persona_language.go`, `model.go`, `router.go`, `screens/review.go` | Drop hybrid option; add region screen + checkbox; route `gentle` → language screen; `neutral` and `custom` skip it (Decision 5); review shows region + flag. |
 | Spec | `openspec/specs/persona-behavior-contract/spec.md` | Reword to decoupled axes. |
 | Uninstall | `internal/components/uninstall/service.go` | NO CHANGE to filenames (Decision 2b keeps `gentleman.md`). |
 
@@ -155,28 +184,33 @@ If we rename the written file to `gentle.md` and the settings value to `"Gentle"
 | legacy `state.json` persona | migrates to |
 |---|---|
 | `gentleman` | `gentle` + region=Rioplatense + artifactsInEnglish=`true` |
-| `gentleman-neutral-artifacts` | `gentle` + region=Rioplatense + artifactsInEnglish=`true` (CONVERGES with `gentleman` — test asserts byte-identical output, proving the hybrid was a no-op) |
-| `neutral` | `neutral` + region="Idioma del usuario" + artifactsInEnglish=`true` |
+| `gentleman-neutral-artifacts` | `neutral` + NO region + artifactsInEnglish=`true` (Decision 5 — the alias promised neutral and delivered voseo; #1702 defect 1. Converges with PR #1712's remap) |
+| `neutral` | `neutral` + NO region + artifactsInEnglish=`true` |
 | `custom` | `custom` (no region, no injection) unchanged |
 | empty / absent | `gentle` + Rioplatense + artifactsInEnglish=`true` (preserve today's fallback) |
 
-**Two hard invariants the tests MUST blindar**:
+Rows 2 and 3 land on the **same** target tuple. That is intentional: `gentleman-neutral-artifacts` and `neutral` both meant "no regional voice, English artifacts", and now both say so.
+
+**Three hard invariants the tests MUST blindar**:
 1. **No bool zero-value trap**: migration sets `ArtifactsInEnglish = true` EXPLICITLY for every legacy case. Never rely on the Go zero value. A legacy state.json with no `artifactsInEnglish` key must NOT flip artifacts to Spanish on sync.
 2. **Idempotency / golden round-trip**: legacy state → migrate → inject → BYTE-IDENTICAL files vs. pre-change baseline. The strongest test is a golden comparison, not field-by-field assertion. An existing user runs `sync` and sees ZERO spurious diff and no degraded persona. The Decision 2b filename-keep is what makes this byte-identical possible.
+
+   Scope note for row 2: the byte-identical guarantee holds for `gentleman`, `neutral`, `custom` and the empty case. `gentleman-neutral-artifacts` is the **one deliberate behavior change** in this matrix — it stops emitting the Gentleman voseo persona, because emitting it was the defect. Its test asserts the new target, not byte-identity with the pre-change output.
+3. **Merge-order independence with #1712**: whether PR #1712 lands first or this change lands first, a given legacy `state.json` MUST end at the same tuple. If #1712 runs first it rewrites `gentleman-neutral-artifacts` → `neutral` in state, and this migration then sees a plain `neutral` (row 3) and produces the identical result as row 2. Required test, not an observation.
 
 ## Testability (Strict TDD active — `go test ./...`)
 
 Every touchpoint is a pure function or a deterministic file transform:
 
-- `composeLanguageDirective(region, artifactsInEnglish)` — pure; table test across AR/MX/CO/ES/CL + "Idioma del usuario" + free text × {true,false}.
+- `composeLanguageDirective(region, artifactsInEnglish)` — pure; table test across AR/MX/CO/ES/CL + "Idioma del usuario" + free text + **empty region (the `neutral` case)** × {true,false}. The empty-region case asserts the result carries the artifacts clause and NO regional-voice clause.
 - `stripLanguageSection(content)` — pure transform; assert only `## Language` removed, all other H2 sections survive.
 - `personaContent(agent, persona)` — assert returned string contains the composed directive and is region-neutral before composition.
 - `isGentlePersona(persona)` — trivial pure func.
 - `normalizePersona()` — table test including legacy aliases.
-- `applyResolvedPersona()` — the full migration matrix above, one case per row.
+- `applyResolvedPersona()` — the full migration matrix above, one case per row, PLUS N=2 idempotency per row and the #1712 cross-sequence case (invariant 3).
 - State round-trip — `InstallState` JSON marshal/unmarshal with new fields; assert `artifactsInEnglish=false` survives (the `omitempty` removal).
 - Golden idempotency — legacy state → inject → compare against committed golden files for Claude + generic.
-- TUI render — `RenderPersonaLanguage()` shows curated radios + "Idioma del usuario" + free-text area + checkbox; `RenderPersona()` no longer lists `gentleman-neutral-artifacts`; review shows region + flag.
+- TUI render — `RenderPersonaLanguage()` shows curated radios + "Idioma del usuario" + free-text area + checkbox; `RenderPersona()` no longer lists `gentleman-neutral-artifacts`; routing test asserts `neutral` and `custom` both skip the language screen; review shows region + flag.
 
 ## Risks and assumptions
 
@@ -188,7 +222,9 @@ Every touchpoint is a pure function or a deterministic file transform:
 | Output-style filename rename would orphan legacy files. | Decision 2b: keep `gentleman.md` + `"Gentleman"`. No rename, no orphan. |
 | Kimi shape designed but unbuilt could drift from the universal composer. | Kimi `language.md` MUST call the same `composeLanguageDirective` — enforced by sharing the function, not re-implementing. |
 | Assumption: all six persona assets share the `## Language` H2 boundary. | Verified for `claude/persona-gentleman.md`; proposal asserts the rest. Deferred-slice tasks must re-verify per agent before stripping. |
-| `neutral` + curated region produces coherent directive. | Same template for all styles; `neutral` simply omits the mentor voice. Covered by `composeLanguageDirective` table test. |
+| `neutral` is regionless by design, so `composeLanguageDirective` must produce NO regional-voice clause for it. | Empty region → artifacts clause only. Covered by an explicit `composeLanguageDirective("", true)` case in the table test, plus an asset guard that the rendered `neutral` content carries no region directive. |
+| A `gentleman-neutral-artifacts` user loses the mentor voice on migration (deliberate — see Decision 5). | Not mitigated, disclosed. It is the fix for #1702 defect 1, not a regression. Migration is one-way and the style is re-selectable; the release note must say so plainly. |
+| Merge-order dependency with PR #1712 changes the final `state.json`. | Removed by construction (Decision 5): both migrations name `neutral`. Enforced by the cross-sequence test in R2, not left to review. |
 
 ## Next step
 

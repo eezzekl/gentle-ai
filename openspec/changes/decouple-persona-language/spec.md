@@ -13,8 +13,9 @@ are first-class requirements below (R1, R2), not footnotes.
 
 | Term | Meaning |
 |------|---------|
-| Style axis | The personality dimension: `gentle` (teaching-first), `neutral` (no marked personality), `custom` (no injection, follow user). |
-| Region axis | The reply language/region dimension, orthogonal to style. A curated `RegionID`, the always-present "Idioma del usuario", or free text. |
+| Style axis | The personality dimension: `gentle` (teaching-first), `neutral` (no marked personality AND no regional voice), `custom` (no injection, follow user). |
+| Region axis | The reply language/region dimension. Applies to `gentle` only. A curated `RegionID`, the always-present "Idioma del usuario", or free text. `neutral` and `custom` carry no region. |
+| Regionless | The state of carrying no region at all (empty `RegionID`), producing no regional-voice clause in the composed directive. `neutral` is regionless by definition, not by default. |
 | `artifactsInEnglish` | Boolean toggle: generated artifacts (code, comments, commits, docs) in English (true) vs. the selected reply language (false). Default true (opt-out). |
 | Composed directive | The single language line built in Go from the region selection and appended into persona content at inject time. |
 | Curated regions v1 | Argentina, Mexico, Colombia, Spain, Chile (locked, decision #1115). |
@@ -30,6 +31,10 @@ are first-class requirements below (R1, R2), not footnotes.
 | `chile` | Chileno | Reply in warm, natural Chilean Spanish. |
 | `user-language` | Idioma del usuario | Reply in the language the user writes in; do not force a region. |
 | free text ("Otro…") | Otro… (texto libre) | Reply using the user-provided free-text language/region instruction, injected as-is. |
+| _(empty)_ | _not selectable — implied by `neutral` / `custom`_ | No regional-voice clause at all. |
+
+These options are offered to the `gentle` style only. `neutral` and `custom` are regionless
+and never reach this selection.
 
 The TUI labels MAY be Spanish. All other generated artifacts (the injected directive,
 identifiers, comments, docs) MUST be English.
@@ -49,14 +54,24 @@ The migration matrix is authoritative:
 | Old `persona` value | → `style` | → `region` | → `artifactsInEnglish` |
 |---------------------|-----------|------------|------------------------|
 | `gentleman` | `gentle` | `argentina` (Rioplatense) | `true` |
-| `gentleman-neutral-artifacts` | `gentle` | `argentina` (Rioplatense) | `true` |
-| `neutral` | `neutral` | `user-language` (Idioma del usuario) | `true` |
+| `gentleman-neutral-artifacts` | `neutral` | none (regionless) | `true` |
+| `neutral` | `neutral` | none (regionless) | `true` |
 | `custom` | `custom` | none (no region) | n/a (no injection) |
 | empty / absent | `gentle` | `argentina` (Rioplatense) | `true` |
 
-`gentleman-neutral-artifacts` is a verified zero-delta variant of `gentleman` (both land in
-the same `personaContent()` default case; the gentleman asset already mandates English
-artifacts). It MUST converge with `gentleman` — both map to the identical target tuple.
+`gentleman-neutral-artifacts` MUST migrate to `neutral`, NOT to `gentle`. It produced output
+identical to `gentleman` — issue #1702 defect 1 documents that identity as the defect ("the
+alias resolves to full gentleman behavior", so "a persona named 'neutral' installs voseo
+conversation"), not as evidence the variant was harmless. Migrating it to `gentle` would
+carry that defect forward under a new name.
+
+This migration therefore converges with PR #1712, which remaps the same value to `neutral`.
+Rows 2 and 3 of the matrix land on the identical target tuple, which is what makes the two
+changes order-independent (R2).
+
+This is the ONE row of the matrix that deliberately changes user-visible behavior: a
+`gentleman-neutral-artifacts` user stops receiving the Gentleman voseo persona. That is the
+fix, not a regression, and it MUST be stated in the release notes.
 
 `artifactsInEnglish` MUST be set to `true` explicitly during migration for all non-custom
 cases. It MUST NOT be left to fall to the Go bool zero-value (`false`), which would flip
@@ -71,19 +86,29 @@ is a required test.
 - AND the resolved region is `argentina` (Rioplatense, voseo)
 - AND `artifactsInEnglish` is `true`
 
-#### Scenario: gentleman-neutral-artifacts converges with gentleman (proves hybrid was a no-op)
+#### Scenario: gentleman-neutral-artifacts migrates to neutral because the alias never delivered neutral artifacts despite its name
 
-- GIVEN one `state.json` with `"persona": "gentleman"` and another with `"persona": "gentleman-neutral-artifacts"`
+- GIVEN a `state.json` with `"persona": "gentleman-neutral-artifacts"`
+- WHEN migration runs
+- THEN the resolved style is `neutral`
+- AND no region is set (the tuple is regionless)
+- AND `artifactsInEnglish` is `true`
+- AND the resolved tuple does NOT equal the `gentleman` migration target
+- AND the injected content carries no Rioplatense/voseo directive
+
+#### Scenario: gentleman-neutral-artifacts converges with plain neutral
+
+- GIVEN one `state.json` with `"persona": "neutral"` and another with `"persona": "gentleman-neutral-artifacts"`
 - WHEN migration runs on both
-- THEN both resolve to the identical tuple `{style: gentle, region: argentina, artifactsInEnglish: true}`
+- THEN both resolve to the identical tuple `{style: neutral, region: none, artifactsInEnglish: true}`
 - AND the injected persona content for both is byte-identical
 
-#### Scenario: neutral migrates to neutral + user-language + English artifacts
+#### Scenario: neutral migrates to neutral, regionless, with English artifacts
 
 - GIVEN a `state.json` with `"persona": "neutral"` and no `region` or `artifactsInEnglish` fields
 - WHEN migration runs
 - THEN the resolved style is `neutral`
-- AND the resolved region is `user-language` ("Idioma del usuario")
+- AND no region is set
 - AND `artifactsInEnglish` is `true`
 
 #### Scenario: custom migrates unchanged with no region and no injection
@@ -119,6 +144,14 @@ re-inject duplicate language directives, and MUST NOT degrade the persona. The s
 of this guarantee is a round-trip: an existing user's old state → migrate → inject → sync
 produces output byte-identical to the prior baseline, with zero spurious diff.
 
+Idempotency MUST be proven for EVERY row of the R1 migration matrix, not only the default
+case: fresh/absent, `gentleman`, `gentleman-neutral-artifacts`, `neutral`, and `custom`.
+
+Migration MUST additionally be **order-independent with respect to PR #1712**. #1712 remaps
+`gentleman-neutral-artifacts` → `neutral` in `state.json`. Because R1 targets the same value,
+consuming #1712 first and then this change MUST produce the same final `state.json` as
+consuming this change first. This is a required test, not an assumption about merge sequencing.
+
 #### Scenario: Repeated sync produces identical injected output
 
 - GIVEN a resolved selection (style + region + artifactsInEnglish)
@@ -143,14 +176,44 @@ produces output byte-identical to the prior baseline, with zero spurious diff.
 - AND a second sync reads the already-migrated fields directly without re-applying legacy aliases
 - AND the second sync output is byte-identical to the first
 
+#### Scenario: Every migration matrix row is idempotent at N=2
+
+- GIVEN a `state.json` for each row of the R1 matrix (absent, `gentleman`, `gentleman-neutral-artifacts`, `neutral`, `custom`)
+- WHEN migration and sync run twice in succession on each
+- THEN the resolved tuple after run 2 equals the tuple after run 1
+- AND the written `state.json` after run 2 is byte-identical to after run 1
+- AND the injected files after run 2 are byte-identical to after run 1
+
+#### Scenario: Consuming PR #1712 first converges with consuming this change first
+
+- GIVEN a legacy `state.json` with `"persona": "gentleman-neutral-artifacts"`
+- WHEN sequence A applies PR #1712's remap (yielding `"persona": "neutral"`) and then this change's migration
+- AND sequence B applies this change's migration directly to the original legacy value
+- THEN both sequences resolve to the identical tuple `{style: neutral, region: none, artifactsInEnglish: true}`
+- AND both produce byte-identical `state.json` and byte-identical injected content
+- AND neither sequence re-applies a legacy alias on a subsequent sync
+
+#### Scenario: A user who already migrated under PR #1712 is not migrated a second time
+
+- GIVEN a `state.json` written by PR #1712 containing `"persona": "neutral"`
+- WHEN this change's migration runs
+- THEN it takes the plain `neutral` row of the R1 matrix, not an alias path
+- AND the resulting state is unchanged apart from the additive `region` and `artifactsInEnglish` fields
+
 ---
 
 ### Requirement: R3 — Two independent axes in the selection model
 
-The system MUST represent personality style and language/region as two independent
-selections. Style MUST be one of `gentle`, `neutral`, `custom`. The `gentleman` and
-`gentleman-neutral-artifacts` persona IDs MUST be removed from the selectable set (retained
-only as back-compat migration aliases per R1).
+The system MUST represent personality style and language/region as two separate selections
+stored in separate fields, so that changing one never rewrites the other. Style MUST be one
+of `gentle`, `neutral`, `custom`. The `gentleman` and `gentleman-neutral-artifacts` persona
+IDs MUST be removed from the selectable set (retained only as back-compat migration aliases
+per R1).
+
+Separation is NOT full orthogonality. The region axis applies to `gentle` only: `neutral` is
+regionless by definition and `custom` injects nothing. Within `gentle`, region selection is
+free — any curated region, "Idioma del usuario", or free text — and independent of every
+other setting.
 
 #### Scenario: Style axis exposes exactly gentle, neutral, custom
 
@@ -159,12 +222,20 @@ only as back-compat migration aliases per R1).
 - THEN it is exactly `{gentle, neutral, custom}`
 - AND it does not include `gentleman` or `gentleman-neutral-artifacts` as selectable options
 
-#### Scenario: Region selection is independent of style
+#### Scenario: Region selection is free within the gentle style
 
-- GIVEN a selected style of `gentle` or `neutral`
+- GIVEN a selected style of `gentle`
 - WHEN a region is selected
-- THEN any curated region, "Idioma del usuario", or free text is selectable regardless of which of the two styles was chosen
+- THEN any curated region, "Idioma del usuario", or free text is selectable
 - AND the region selection does not change the style selection
+
+#### Scenario: Neutral style is regionless
+
+- GIVEN a selected style of `neutral`
+- WHEN the selection is finalized
+- THEN no region is associated with the selection
+- AND `artifactsInEnglish` is `true`
+- AND the composed content contains no regional-voice directive
 
 #### Scenario: Custom style carries no region and triggers no injection
 
@@ -196,6 +267,14 @@ single source of the regional voice.
 - WHEN persona content is composed
 - THEN the directive instructs replying in the language the user writes in without forcing a region
 
+#### Scenario: A regionless selection composes no regional-voice clause
+
+- GIVEN an empty region (the `neutral` case) with `artifactsInEnglish` `true`
+- WHEN the language directive is composed
+- THEN the result contains the English-artifacts clause
+- AND it contains no reply-language or regional-voice clause
+- AND it differs from the directive composed for the `user-language` option, which does instruct following the user's language
+
 #### Scenario: Free-text region is injected as-is
 
 - GIVEN a free-text region value (e.g. "yucateco")
@@ -226,6 +305,13 @@ regardless of the selected reply region. When OFF, the injected artifact-languag
 MUST permit artifacts in the selected reply language. The two states MUST inject distinct
 directives so the toggle is observable.
 
+The checkbox is offered on the `gentle` language section only, because it is the only style
+that reaches that section. For `neutral`, `artifactsInEnglish` MUST be forced to `true` and
+MUST NOT be user-configurable — the pre-change `neutral` asset already mandated English
+artifacts unconditionally, so this preserves its contract exactly and is what makes the
+`gentleman-neutral-artifacts` → `neutral` migration behavior-preserving on the artifacts axis.
+For `custom`, the flag is not applicable (nothing is injected).
+
 #### Scenario: Checkbox defaults ON for a fresh install
 
 - GIVEN a fresh install reaching the language section
@@ -246,6 +332,14 @@ directives so the toggle is observable.
 - WHEN persona content is composed
 - THEN the injected artifact-language directive permits generated artifacts in the selected reply language
 - AND it differs from the directive injected when the checkbox is ON
+
+#### Scenario: Neutral forces artifacts in English with no checkbox
+
+- GIVEN style `neutral` is selected
+- WHEN the selection is finalized and persisted
+- THEN `artifactsInEnglish` is `true`
+- AND no artifacts-in-English checkbox was presented to the user
+- AND the persisted value cannot be `false` for a `neutral` selection
 
 ---
 
@@ -281,8 +375,10 @@ both fields and their values.
 
 Persona normalization MUST accept the new style IDs (`gentle`, `neutral`, `custom`) and MUST
 accept the legacy values (`gentleman`, `gentleman-neutral-artifacts`) as back-compat aliases
-that normalize to their migration targets (per R1). Unknown values MUST be handled without
-silently selecting a regional voice the user did not choose.
+that normalize to their migration targets (per R1). The two aliases MUST normalize to
+DIFFERENT targets — `gentleman` → `gentle`, `gentleman-neutral-artifacts` → `neutral` — so
+validation and migration never disagree about the same legacy value. Unknown values MUST be
+handled without silently selecting a regional voice the user did not choose.
 
 #### Scenario: New style IDs validate
 
@@ -290,11 +386,19 @@ silently selecting a regional voice the user did not choose.
 - WHEN normalization runs
 - THEN the value is accepted as valid
 
-#### Scenario: Legacy aliases normalize to migration targets
+#### Scenario: The gentleman alias normalizes to gentle
 
-- GIVEN a persona value of `gentleman` or `gentleman-neutral-artifacts`
+- GIVEN a persona value of `gentleman`
 - WHEN normalization runs
 - THEN it normalizes to `gentle` (with the migration tuple from R1)
+- AND it is not rejected as invalid
+
+#### Scenario: The gentleman-neutral-artifacts alias normalizes to neutral
+
+- GIVEN a persona value of `gentleman-neutral-artifacts`
+- WHEN normalization runs
+- THEN it normalizes to `neutral` (with the migration tuple from R1)
+- AND it does NOT normalize to `gentle`
 - AND it is not rejected as invalid
 
 #### Scenario: Unknown persona does not silently inject regional voice
@@ -308,11 +412,12 @@ silently selecting a regional voice the user did not choose.
 ### Requirement: R8 — TUI region screen and review
 
 The TUI MUST drop the `gentleman-neutral-artifacts` option, present the style choice as
-`gentle | neutral | custom`, and present a language/region section for `gentle` and `neutral`
+`gentle | neutral | custom`, and present a language/region section for `gentle` ONLY,
 containing the curated region radios, the always-present "Idioma del usuario" option, the
 always-present free-text "Otro…" input, and the artifacts-in-English checkbox. The region
-section MUST be skipped for `custom`. The review screen MUST show the selected region and the
-artifacts-in-English flag.
+section MUST be skipped for both `neutral` (regionless by definition) and `custom` (no
+injection). The review screen MUST show the selected region and the artifacts-in-English flag,
+and MUST make the regionless state legible for `neutral` rather than rendering an empty field.
 
 #### Scenario: Style options no longer include the hybrid
 
@@ -323,12 +428,20 @@ artifacts-in-English flag.
 
 #### Scenario: Region section shows curated radios plus always-present options
 
-- GIVEN style `gentle` or `neutral` is selected
+- GIVEN style `gentle` is selected
 - WHEN the language/region section is rendered
 - THEN it shows the five curated region radios with gentilicio-first Spanish labels
 - AND it shows "Idioma del usuario"
 - AND it shows a free-text "Otro… (texto libre)" input
 - AND it shows the artifacts-in-English checkbox defaulting ON
+
+#### Scenario: Region section is skipped for neutral
+
+- GIVEN style `neutral` is selected
+- WHEN routing proceeds
+- THEN the language/region section is skipped
+- AND no region is collected
+- AND `artifactsInEnglish` is set to `true` without presenting the checkbox
 
 #### Scenario: Region section is skipped for custom
 
@@ -343,6 +456,13 @@ artifacts-in-English flag.
 - WHEN the review screen is rendered
 - THEN it displays the selected region label
 - AND it displays the artifacts-in-English state
+
+#### Scenario: Review makes the regionless state legible for neutral
+
+- GIVEN a finalized `neutral` selection
+- WHEN the review screen is rendered
+- THEN the region line states that no region applies rather than showing a blank value
+- AND it displays the artifacts-in-English state as on
 
 ---
 
@@ -368,12 +488,14 @@ language section MUST NOT remove or weaken any non-language part of the persona 
 - THEN the only regional voice instruction is the composed directive line
 - AND there is no second hardcoded regional instruction in the base asset or output-style asset
 
-#### Scenario: Neutral Claude/generic asset keeps parity without regional voice
+#### Scenario: Neutral Claude/generic asset is rendered with no region directive
 
-- GIVEN the Claude or generic `neutral` asset is rendered with a region directive
+- GIVEN the Claude or generic `neutral` asset is rendered for a regionless selection
 - WHEN its content is inspected
 - THEN it preserves the neutral mentor contract (brevity, one-question, no-menu, verification-first, artifact-language)
 - AND it contains no marked regional slang baked into the base asset
+- AND no regional-voice directive is appended to it
+- AND the rendered output is byte-identical to the pre-change `neutral` output
 
 ---
 
@@ -386,7 +508,9 @@ applied to that spec when this change lands.
 
 | Existing element | Required delta |
 |------------------|----------------|
-| Requirement "Neutral Mentor Behavior Parity" | Replace "variant of the Gentleman mentor behavior contract" framing so neutral is parity of the `gentle` mentor contract; keep "no regional voice in the base asset". |
+| Requirement "Neutral Mentor Behavior Parity" | Replace "variant of the Gentleman mentor behavior contract" framing so neutral is parity of the `gentle` mentor contract; keep "no regional voice in the base asset"; state explicitly that `neutral` is REGIONLESS — it carries no region field and receives no composed regional directive. |
+| Any statement that `neutral` participates in the region axis | Remove. Under Decision 5 the region axis applies to `gentle` only. This includes review/TUI wording and any migration note pairing `neutral` with `user-language`. |
+| Legacy alias documentation | `gentleman` → `gentle`; `gentleman-neutral-artifacts` → `neutral`. The two aliases MUST NOT be documented as sharing a target. |
 | Scenario "Gentleman keeps regional mentor behavior when explicitly selected" | Replace with: "Gentle persona with the Rioplatense region injects the Rioplatense (voseo) directive" — regional voice now comes from the language axis, not a `gentleman` persona. |
 | Requirement "Artifact Language Independence" + scenario "Gentleman voice does not leak into artifacts" | Re-anchor to the `artifactsInEnglish` checkbox; replace `gentleman` references with `gentle`; artifact language is governed by the checkbox, not a persona variant. |
 | Requirement "Claude Neutral Output Style Contract" scenario "Claude explicit Gentleman output-style remains honored" | Replace `gentleman` with `gentle`; the output-style governs tone/personality only and is region-neutral (regional voice is in the composed persona directive). |
@@ -404,15 +528,15 @@ Every requirement maps to unit-testable boundaries:
 
 | Requirement | Test shape |
 |-------------|------------|
-| R1 migration | Table-driven test over the migration matrix; assert resolved tuple per old value; explicit assertion that `gentleman` and `gentleman-neutral-artifacts` converge byte-identical; explicit `artifactsInEnglish == true` (not zero-value) assertion. |
-| R2 idempotency | Inject N times; assert byte-identical output and no duplicate markers/directives. Golden/round-trip: old state → migrate → inject vs. pre-change baseline. |
-| R3 axes | Enumerate style options; assert region orthogonality; assert custom carries no region/injection. |
-| R4 directive | Pure-function test on `personaContent()` per (style, region); assert single directive line; assert no per-region asset files; assert base asset has no hardcoded Rioplatense line. |
-| R5 checkbox | Assert default ON; assert distinct directives for ON vs OFF. |
+| R1 migration | Table-driven test over the migration matrix; assert resolved tuple per old value; explicit assertion that `gentleman-neutral-artifacts` converges with `neutral` and does NOT equal the `gentleman` target; explicit `artifactsInEnglish == true` (not zero-value) assertion. |
+| R2 idempotency | Inject N=2 per matrix row; assert byte-identical output, state, and no duplicate markers/directives. Golden/round-trip: old state → migrate → inject vs. pre-change baseline (all rows except `gentleman-neutral-artifacts`, whose change is deliberate). Cross-sequence test: #1712-then-this vs. this-alone converge. |
+| R3 axes | Enumerate style options; assert region freedom within `gentle`; assert `neutral` and `custom` carry no region and no region screen. |
+| R4 directive | Pure-function test on `personaContent()` per (style, region); assert single directive line; assert empty region composes no regional clause; assert no per-region asset files; assert base asset has no hardcoded Rioplatense line. |
+| R5 checkbox | Assert default ON for `gentle`; assert distinct directives for ON vs OFF; assert `neutral` persists `true` with no checkbox presented. |
 | R6 persistence | State JSON marshal/unmarshal round-trip with new fields; `MergeAgents` carry test. |
-| R7 validation | Table-driven `normalizePersona()` over new IDs + legacy aliases + unknown. |
-| R8 TUI | Direct `Model.Update()` state-transition tests; render assertions for region radios, options, checkbox, review; skip-region-for-custom routing test. |
-| R9 assets | Asset-content guard tests: gentle base region-neutral, teaching contract survives, composed directive sole regional source. |
+| R7 validation | Table-driven `normalizePersona()` over new IDs + legacy aliases + unknown; assert the two aliases resolve to DIFFERENT targets. |
+| R8 TUI | Direct `Model.Update()` state-transition tests; render assertions for region radios, options, checkbox, review; skip-region routing tests for BOTH `neutral` and `custom`. |
+| R9 assets | Asset-content guard tests: gentle base region-neutral, teaching contract survives, composed directive sole regional source, `neutral` render byte-identical to pre-change. |
 
 ---
 

@@ -7,6 +7,31 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 
 ---
 
+## ⚠ Rework required — design Decision 5 (`neutral` is regionless)
+
+WU-1 through WU-11 were implemented and marked complete under the **previous** posture, in which
+`gentleman-neutral-artifacts` migrated to `gentle + argentina` and `neutral` carried a
+`user-language` region. Design Decision 5 reversed that: `neutral` is regionless, and the alias
+migrates to `neutral`. The `[x]` marks below record that the work was done — they do NOT mean the
+code currently matches this document.
+
+The following units are invalidated and MUST be reworked while landing the rebase:
+
+| Unit | What changes |
+|---|---|
+| WU-1 | `ComposeLanguageDirective` must handle an empty region → artifacts clause only, no regional-voice clause. |
+| WU-3 | `normalizePersona`: `gentleman-neutral-artifacts` → `PersonaNeutral`, no longer `PersonaGentle`. |
+| WU-4 | Migration matrix rows 2 and 3 both target `neutral` + no region. |
+| WU-6 | `isGentlePersona` must return **false** for `gentleman-neutral-artifacts`. |
+| WU-7 / WU-8 | Router sends `gentle` only to `ScreenPersonaLanguage`; `neutral` skips it like `custom`. |
+| WU-9 | Review renders the regionless state for `neutral` explicitly. |
+| WU-10 | `persona-behavior-contract` was already edited under the old posture — see WU-10.2. |
+| WU-12 | New: the compatibility-matrix and order-independence tests requested on issue #912. |
+
+Goldens touched by these units must be regenerated with `-update`, never hand-merged.
+
+---
+
 ## Work Unit 1 — Model layer: types + region map + directive composer
 
 **Satisfies**: R3 (two independent axes), R4 (composed directive), R5 (artifacts checkbox)
@@ -16,6 +41,7 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 - [x] In `internal/model/region_test.go` (new file): write table-driven test for `composeLanguageDirective(region, artifactsInEnglish)` covering:
   - Each curated region (argentina, mexico, colombia, spain, chile) × {true, false} → assert directive string contains the expected language phrase and the correct artifacts clause.
   - `user-language` sentinel → assert "reply in the language the user writes in" variant, no forced region.
+  - **REWORK (Decision 5)** — empty region `""` (the `neutral` case) → assert the artifacts clause is present and NO reply-language or regional-voice clause is emitted; assert the result differs from the `user-language` case.
   - Free-text input (e.g. "yucateco") → assert free-text injected verbatim, plus artifacts clause.
   - `artifactsInEnglish=true` → assert English-artifacts clause present.
   - `artifactsInEnglish=false` → assert in-language clause present and different from the `=true` case.
@@ -31,7 +57,8 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 - [x] In `internal/model/region.go` (new file): implement pure function `composeLanguageDirective(region RegionID, artifactsInEnglish bool) string`.
   - Region map lookup → compose the reply-language clause.
   - `user-language` sentinel → follow-user clause (no forced region).
-  - Unrecognized region string → treat as free text, inject verbatim.
+  - **REWORK (Decision 5)** — empty region → emit NO reply-language clause at all. Distinct from `user-language`, which does emit one.
+  - Unrecognized NON-EMPTY region string → treat as free text, inject verbatim.
   - Append the artifacts clause based on `artifactsInEnglish`.
 - [x] Run `go test ./internal/model/...` — expect GREEN. ✓ Confirmed GREEN.
 
@@ -74,18 +101,18 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
   - `"neutral"` → `PersonaNeutral`, no error.
   - `"custom"` → `PersonaCustom`, no error.
   - `"gentleman"` → `PersonaGentle`, no error (back-compat alias).
-  - `"gentleman-neutral-artifacts"` → `PersonaGentle`, no error (back-compat alias, migration convergence).
+  - **REWORK (Decision 5)** — `"gentleman-neutral-artifacts"` → `PersonaNeutral`, no error. Add an explicit assertion that it does NOT resolve to `PersonaGentle`; the two aliases have different targets.
   - `""` → `PersonaGentle`, no error (default).
   - `"unknown-value"` → error, and the resolved value is NOT a persona that injects regional voice.
 - [x] Run `go test ./internal/cli/...` — expect RED. ✓ Confirmed RED.
 
 ### WU-3.2 — Implement: update `normalizePersona`
 - [x] In `internal/cli/validate.go`:
-  - Update `normalizePersona` switch: add `PersonaGentle`; map `PersonaGentleman` → `PersonaGentle`; map `PersonaGentlemanNeutralArtifacts` → `PersonaGentle`.
+  - Update `normalizePersona` switch: add `PersonaGentle`; map `PersonaGentleman` → `PersonaGentle`; **REWORK (Decision 5)** map `PersonaGentlemanNeutralArtifacts` → `PersonaNeutral`.
   - Update empty-string default from `PersonaGentleman` to `PersonaGentle`.
 - [x] Run `go test ./internal/cli/...` — expect GREEN. ✓ Confirmed GREEN (full suite passes).
 
-**Acceptance**: Both `"gentleman"` and `"gentleman-neutral-artifacts"` normalize to `PersonaGentle` (confirming migration convergence at the validation layer). The selectable set is `{gentle, neutral, custom}` only.
+**Acceptance**: `"gentleman"` normalizes to `PersonaGentle` and `"gentleman-neutral-artifacts"` normalizes to `PersonaNeutral`, matching the R1 migration matrix at the validation layer. The selectable set is `{gentle, neutral, custom}` only.
 
 ---
 
@@ -96,17 +123,19 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 ### WU-4.1 — Test: migration matrix + idempotency
 - [x] In `internal/cli/sync_test.go` (extend): write table-driven test for `applyResolvedPersona` covering all 5 migration matrix rows:
 
+  **REWORK (Decision 5)** — rows 2 and 3 changed:
+
   | old persona string | expected style | expected region | expected artifactsInEnglish |
   |---|---|---|---|
   | `"gentleman"` | `gentle` | `argentina` | `true` |
-  | `"gentleman-neutral-artifacts"` | `gentle` | `argentina` | `true` |
-  | `"neutral"` | `neutral` | `user-language` | `true` |
+  | `"gentleman-neutral-artifacts"` | `neutral` | `""` (regionless) | `true` |
+  | `"neutral"` | `neutral` | `""` (regionless) | `true` |
   | `"custom"` | `custom` | `""` | (N/A — no injection) |
   | `""` | `gentle` | `argentina` | `true` |
 
-  - Explicit assertion: `"gentleman"` and `"gentleman-neutral-artifacts"` produce byte-identical resolved tuples (proving hybrid was a no-op).
+  - Explicit assertion: `"gentleman-neutral-artifacts"` and `"neutral"` produce byte-identical resolved tuples.
+  - Explicit assertion: `"gentleman-neutral-artifacts"` does NOT equal the `"gentleman"` tuple, and its injected content carries no Rioplatense/voseo directive (#1702 defect 1).
   - Explicit assertion: `artifactsInEnglish` is `true` (not Go zero-value `false`) for every non-custom row.
-  - Note: `neutral` migrates to `user-language` — acceptance-note confirmed here.
 
 - [x] Write idempotency test for `RunSyncWithSelection`: inject twice, assert resulting content byte-identical on second run.
 - [x] Run `go test ./internal/cli/...` — expect RED.
@@ -119,8 +148,8 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 - [x] Run `go test ./internal/cli/...` — expect GREEN.
 
 **Acceptance notes**:
-- `neutral` style → region `user-language` ("Idioma del usuario") — per migration constraint #1118.
-- `ArtifactsInEnglish` explicitly `true` in every non-custom migration branch.
+- `neutral` style → NO region (empty `RegionID`), per design Decision 5. It is regionless, not `user-language`.
+- `ArtifactsInEnglish` explicitly `true` in every non-custom migration branch, and forced `true` for `neutral`.
 - Idempotency test green: second sync produces no file changes.
 
 ---
@@ -167,22 +196,22 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
     - Assert result contains exactly ONE language directive line (the composed one).
     - Assert result does NOT contain a second hardcoded Rioplatense line.
     - Assert the composed directive for `(gentle, argentina, true)` is byte-identical to the pre-change gentleman persona's language section output (golden comparison).
-  - Test `personaContent` with `(AgentClaudeCode, PersonaNeutral, RegionUserLanguage, true)`: assert neutral contract sections survive, no marked regional voice baked in.
+  - **REWORK (Decision 5)** — test `personaContent` with `(AgentClaudeCode, PersonaNeutral, "" /* regionless */, true)`: assert neutral contract sections survive, no marked regional voice baked in, no regional directive appended, and the output is byte-identical to the pre-change neutral baseline.
   - Idempotency: call the full inject path twice on a temp file; assert content byte-identical after second call; assert no duplicate directive lines.
-  - `isGentlePersona` unit test: `PersonaGentle` → true; `PersonaGentleman` → true (alias); `PersonaGentlemanNeutralArtifacts` → true (alias); `PersonaNeutral` → false; `PersonaCustom` → false.
+  - **REWORK (Decision 5)** — `isGentlePersona` unit test: `PersonaGentle` → true; `PersonaGentleman` → true (alias); `PersonaGentlemanNeutralArtifacts` → **false** (it migrates to neutral; returning true would keep routing it to the Gentleman output-style, which is #1702 defect 1); `PersonaNeutral` → false; `PersonaCustom` → false.
 - [x] Run `go test ./internal/components/persona/...` — expect RED. ✓ Confirmed RED.
 
 ### WU-6.2 — Implement: wire directive into inject
 - [x] In `internal/components/persona/inject.go`:
   - Updated `personaContent` signature to `personaContent(agent, persona, region, artifactsInEnglish)`: call the existing asset read, run `stripLanguageSection()`, then append `"\n" + model.ComposeLanguageDirective(region, artifactsInEnglish)`.
-  - Renamed `isGentlemanConversationPersona` to `isGentlePersona`. Updated function to match all 3 IDs (`PersonaGentle`, `PersonaGentleman`, `PersonaGentlemanNeutralArtifacts`). Updated all 4 call sites.
+  - Renamed `isGentlemanConversationPersona` to `isGentlePersona`. **REWORK (Decision 5)**: it must match `PersonaGentle` and `PersonaGentleman` ONLY — drop `PersonaGentlemanNeutralArtifacts` from the match set. Updated all 4 call sites.
   - Updated `Inject` and `InjectForSync` signatures to accept `region model.RegionID` and `artifactsInEnglish bool`. Updated callers in `sync.go` (InjectForSync) and `run.go` (Inject).
   - Exported `ComposeLanguageDirective` in `internal/model/region.go`.
   - Updated all test callers in `inject_test.go`, `golden_test.go`, `openclaw_integration_test.go`, `persona_language_contract_test.go`.
   - Regenerated 5 affected golden files with `-update` flag.
 - [x] Run `go test ./internal/components/persona/...` — expect GREEN. ✓ Confirmed GREEN (full `go test ./...` passes).
 
-**Acceptance**: Golden round-trip test — legacy state `"persona": "gentleman"` → migrate → inject → output byte-identical to pre-change gentleman persona baseline (committed golden file or inline fixture). `isGentlePersona` correctly matches all three gentleman-family IDs.
+**Acceptance**: Golden round-trip test — legacy state `"persona": "gentleman"` → migrate → inject → output byte-identical to pre-change gentleman persona baseline (committed golden file or inline fixture). Legacy `"persona": "gentleman-neutral-artifacts"` → output byte-identical to the pre-change **neutral** baseline, not the gentleman one. `isGentlePersona` matches `PersonaGentle` and `PersonaGentleman` only.
 
 ---
 
@@ -203,10 +232,10 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
   - Update `personaDescriptions` map: add `PersonaGentle` description; remove `PersonaGentleman` and `PersonaGentlemanNeutralArtifacts` entries.
 - [x] In `internal/tui/model.go`: update `ScreenPersona` cursor-count (was 4 options + Back; now 3 options + Back → `len(PersonaOptions()) + 1` already correct since it uses the slice length).
   - Update any `ScreenPersona` routing logic that branched on `PersonaGentlemanNeutralArtifacts`.
-- [x] In `internal/tui/router.go`: add new route `ScreenPersona → ScreenPersonaLanguage` for `gentle` and `neutral`; keep `ScreenPersona → ScreenPreset` for `custom` (skips language screen). **Shipped in WU-8** (route requires the screen, which WU-8 introduces).
+- [x] **REWORK (Decision 5)** — In `internal/tui/router.go`: add new route `ScreenPersona → ScreenPersonaLanguage` for `gentle` ONLY; keep `ScreenPersona → ScreenPreset` for `neutral` AND `custom` (both skip the language screen). **Shipped in WU-8** (route requires the screen, which WU-8 introduces).
 - [x] Run `go test ./internal/tui/...` — expect GREEN.
 
-**Acceptance**: `PersonaOptions()` returns exactly 3 items. Routing: selecting `custom` skips `ScreenPersonaLanguage` and goes directly to `ScreenPreset`.
+**Acceptance**: `PersonaOptions()` returns exactly 3 items. Routing: selecting `neutral` or `custom` skips `ScreenPersonaLanguage` and goes directly to `ScreenPreset`.
 
 ---
 
@@ -221,9 +250,9 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
     - "Idioma del usuario" option always present.
     - "Otro… (texto libre)" free-text input always present.
     - Artifacts-in-English checkbox, defaulting ON (checked).
-  - Routing test via `Model.Update()`:
+  - Routing test via `Model.Update()` — **REWORK (Decision 5)**:
     - After selecting `gentle` on `ScreenPersona` → next screen is `ScreenPersonaLanguage`.
-    - After selecting `neutral` on `ScreenPersona` → next screen is `ScreenPersonaLanguage`.
+    - After selecting `neutral` on `ScreenPersona` → next screen is `ScreenPreset` (region screen skipped), `Selection.Region` stays empty, and `Selection.ArtifactsInEnglish` is set to `true`.
     - After selecting `custom` on `ScreenPersona` → next screen is `ScreenPreset` (region screen skipped).
   - Assert `Selection.ArtifactsInEnglish` defaults to `true` when screen initializes.
 - [x] Run `go test ./internal/tui/...` — expect RED.
@@ -251,6 +280,7 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 - [x] In `internal/tui/screens/review_test.go` (extend):
   - Assert `RenderReview` with a payload containing `Region: "mexico"` and `ArtifactsInEnglish: true` includes a "Region" or "Language" line showing "mexico" (or its label).
   - Assert `RenderReview` with `ArtifactsInEnglish: false` shows the off-state of the checkbox.
+  - **REWORK (Decision 5)** — assert `RenderReview` for a `neutral` selection (empty `Region`) renders an explicit "no region" line rather than a blank value, and shows artifacts-in-English as on.
 - [x] Run `go test ./internal/tui/...` — expect RED.
 
 ### WU-9.2 — Implement: extend `ReviewPayload` + `RenderReview`
@@ -274,6 +304,22 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
   6. Scenarios referencing `gentleman` → `gentle` + explicit region.
 - [x] No test required (doc edit). Verify the file compiles/reads correctly.
 
+### WU-10.2 — Re-edit spec file for Decision 5
+
+WU-10.1 landed under the previous posture. Verified scope of the drift (2026-07-30): exactly ONE
+stale sentence, at `openspec/specs/persona-behavior-contract/spec.md:7`, closing the "Neutral
+Mentor Behavior Parity" requirement:
+
+> "Regional voice is governed by the independent region axis, not by the style."
+
+That is true for `gentle` and false for `neutral`, which under Decision 5 has no region at all.
+The rest of the file is clean — it never pairs `neutral` with `user-language` and never documents
+the legacy aliases, so nothing else needs removing.
+
+- [ ] Rewrite that sentence: `neutral` is REGIONLESS — it carries no region and receives no composed regional directive; the region axis applies to `gentle` only.
+- [ ] Add the legacy alias targets to this spec (currently absent): `gentleman` → `gentle`, `gentleman-neutral-artifacts` → `neutral`.
+- [ ] No test required (doc edit). Re-read the file end to end for leftover old-posture wording.
+
 ---
 
 ## Work Unit 11 — Integration: wire state persistence through TUI install path
@@ -293,6 +339,41 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 - [x] Run `go test ./internal/cli/...` — expect GREEN.
 
 **Acceptance**: After a single sync with a legacy `gentleman` state, a subsequent `state.Read` returns `Persona: "gentle"`, `Region: "argentina"`, `ArtifactsInEnglish: true`. The second sync hits no migration path and produces byte-identical output.
+
+---
+
+## Work Unit 12 — Compatibility matrix: N=2 idempotency + #1712 order-independence
+
+**Satisfies**: R1 (migration), R2 (idempotency + merge-order independence)
+
+Requested directly by the maintainer on issue #912 (comment `5112515766`): a migration
+compatibility matrix resolving sequencing with #1702, plus idempotency tests. WU-4's existing
+idempotency test covers a single sync path; it does NOT cover every matrix row, and nothing
+today proves order-independence against PR #1712.
+
+### WU-12.1 — Test: N=2 idempotency across every matrix row
+
+- [ ] New file `internal/cli/sync_persona_migration_test.go`.
+- [ ] Table over the five R1 rows (absent, `gentleman`, `gentleman-neutral-artifacts`, `neutral`, `custom`). For each:
+  - Build a legacy `state.json` fixture.
+  - Run migrate + sync twice.
+  - Assert the resolved tuple after run 2 equals run 1.
+  - Assert the written `state.json` bytes after run 2 equal run 1.
+  - Assert the injected file bytes after run 2 equal run 1.
+- [ ] Run `go test ./internal/cli/...` — expect RED first.
+
+### WU-12.2 — Test: #1712 cross-sequence convergence
+
+- [ ] In the same file, model both merge orders for `"persona": "gentleman-neutral-artifacts"`:
+  - **Sequence A** — apply #1712's remap first (rewrites the value to `"neutral"`), then this change's migration.
+  - **Sequence B** — apply this change's migration directly to the original legacy value.
+- [ ] Assert both sequences produce the identical resolved tuple `{neutral, "", true}`.
+- [ ] Assert both produce byte-identical `state.json` and byte-identical injected content.
+- [ ] Assert a subsequent sync on either result takes the plain `neutral` row, never an alias path.
+- [ ] Run `go test ./internal/cli/...` — expect GREEN once WU-3/WU-4 rework lands.
+
+**Acceptance**: The test file IS the compatibility matrix. Its table is the artifact quoted in
+the reply on issue #912 — if the reply and the test ever disagree, the test is authoritative.
 
 ---
 
@@ -323,6 +404,7 @@ WU-7 (TUI persona screen)               [depends on WU-1: PersonaGentle]
         └─► WU-9 (TUI review)           [depends on WU-2: Selection.Region, WU-8]
               └─► WU-11 (state persist) [depends on WU-4 + WU-8 + WU-2]
 WU-10 (spec edit)                       [INDEPENDENT — can run at any point]
+WU-12 (compatibility matrix tests)      [depends on WU-3 + WU-4 rework: alias + matrix targets]
 ```
 
 **Parallelizable after WU-1.2 green**:
@@ -348,8 +430,10 @@ WU-10 (spec edit)                       [INDEPENDENT — can run at any point]
 | WU-9 (TUI review) | ~30 lines |
 | WU-10 (spec edit) | ~40 lines |
 | WU-11 (state persist integration) | ~40 lines |
+| WU-12 (compatibility matrix tests, new file) | ~140 lines (all test) |
+| Decision-5 rework across WU-1/3/4/6/7/8/9 + WU-10.2 | ~90 lines net + golden regeneration |
 | **Tests across all WUs** | ~250–280 lines |
-| **Total estimated changed lines** | **~850–900 lines** |
+| **Total estimated changed lines** | **~1080–1130 lines** |
 
 **Chained PRs recommended**: YES
 
@@ -372,5 +456,13 @@ WU-6 (~80 lines + tests ~100) = ~180 lines ✓
 **PR 3 — TUI + spec**
 WU-7 + WU-8 + WU-9 + WU-10 + WU-11 (~270 lines + tests ~100) = ~370 lines ✓
 
-Final recommendation: 4 chained PRs (1a → 1b → 2 → 3), each under 400 lines.
+**PR 4 — Compatibility matrix + spec re-edit**
+WU-12 + WU-10.2 (~140 lines of test + ~30 lines of doc) = ~170 lines ✓
+
+Final recommendation: 5 chained PRs (1a → 1b → 2 → 3 → 4), each under 400 lines.
 Chain strategy: TBD by orchestrator (stacked-to-main or feature-branch-chain).
+
+**Decision-5 rework placement**: each reworked unit ships inside the PR that introduced it
+(WU-1/3/4 rework in PR 1a/1b, WU-6 in PR 2, WU-7/8/9 in PR 3), so no PR contradicts the spec
+at its own merge point. PR 4 is last because its cross-sequence test can only pass once the
+alias and matrix rework has landed.
