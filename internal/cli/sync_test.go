@@ -4106,7 +4106,18 @@ func setupCodexSyncHomeWithPhaseModels(t *testing.T, carrilModels map[string]str
 	t.Cleanup(codex.SetRuntimeVersionCommandForTest("codex-cli 0.144.0", nil))
 	home := t.TempDir()
 	s := state.InstallState{
-		InstalledAgents:             []string{"codex"},
+		InstalledAgents: []string{"codex"},
+		// Pin the persona explicitly. This suite is about codex carril/effort
+		// assignment migration, so its result must not depend on whatever the
+		// persona axis happens to default to — that coupling is accidental.
+		//
+		// It also keeps the suite off a pre-existing main defect (#2067): with a
+		// Gentleman-family persona a repeated sync reports 9 byte-identical files
+		// as changed, because syncBackupTargets under-enumerates nested skill
+		// assets and hooks.json, and changedSyncFiles treats a missing baseline as
+		// a change. That bug is filed with its own reproduction and is not this
+		// suite's subject.
+		Persona:                     string(model.PersonaNeutral),
 		CodexModelAssignments:       effortAssignments,
 		CodexCarrilModelAssignments: carrilModels,
 		CodexPhaseModelAssignments:  phaseModels,
