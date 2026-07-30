@@ -1493,3 +1493,89 @@ func TestComponentOperationsSDD_OpenCodeRemovesManagedPluginsUnderXDGConfigHome(
 		t.Fatalf("uninstall touched ~/.config/opencode although XDG_CONFIG_HOME is set (stat err = %v)", err)
 	}
 }
+
+// TestUninstallSDDAndEngramLeaveReferencesInert is the Uninstall/Revert Safety
+// requirement. The stub blocks and their markers must go, leaving no active
+// reference from the root. The reference files themselves are allowed to stay:
+// the spec makes them inert rather than deleted, because nothing loads them once
+// no stub points at them.
+func TestUninstallSDDAndEngramLeaveReferencesInert(t *testing.T) {
+	for _, agentID := range []model.AgentID{model.AgentGeminiCLI, model.AgentAntigravity} {
+		t.Run(string(agentID), func(t *testing.T) {
+			homeDir := t.TempDir()
+
+			svc, err := NewService(homeDir, t.TempDir(), "dev")
+			if err != nil {
+				t.Fatalf("NewService() error = %v", err)
+			}
+			adapter, ok := svc.registry.Get(agentID)
+			if !ok {
+				t.Fatalf("%s adapter not found in registry", agentID)
+			}
+
+			sdd.SetUserHomeDirForTest(t, homeDir)
+			engram.SetUserHomeDirForTest(t, homeDir)
+			engram.SetLookPathForTest(t, "/opt/homebrew/bin/engram", "")
+
+			if _, err := sdd.Inject(homeDir, adapter, ""); err != nil {
+				t.Fatalf("sdd.Inject error = %v", err)
+			}
+			if _, err := engram.Inject(homeDir, adapter); err != nil {
+				t.Fatalf("engram.Inject error = %v", err)
+			}
+
+			rootPath := adapter.SystemPromptFile(homeDir)
+			referenceFiles := []string{
+				filepath.Join(homeDir, ".gemini", "references", "sdd-orchestrator.md"),
+				filepath.Join(homeDir, ".gemini", "references", "engram-protocol.md"),
+			}
+			for _, path := range referenceFiles {
+				if _, err := os.Stat(path); err != nil {
+					t.Fatalf("setup failed: reference file %q not written: %v", path, err)
+				}
+			}
+
+			for _, component := range []model.ComponentID{model.ComponentSDD, model.ComponentEngram} {
+				ops, _, opsErr := svc.componentOperations(adapter, component)
+				if opsErr != nil {
+					t.Fatalf("componentOperations(%s) error = %v", component, opsErr)
+				}
+				for _, op := range ops {
+					if _, _, err := op.apply(op.path); err != nil {
+						t.Fatalf("operation %v on %q error = %v", op.typeID, op.path, err)
+					}
+				}
+			}
+
+			// The stub blocks were the only managed content in this root, so
+			// uninstall legitimately removes the emptied file outright. Either
+			// outcome satisfies the requirement; what must never survive is a
+			// marker or a live pointer at the reference files.
+			var root string
+			if data, statErr := os.ReadFile(rootPath); statErr == nil {
+				root = string(data)
+			} else if !os.IsNotExist(statErr) {
+				t.Fatalf("ReadFile(%q) error = %v", rootPath, statErr)
+			}
+
+			for _, marker := range []string{
+				"<!-- gentle-ai:sdd-orchestrator -->", "<!-- /gentle-ai:sdd-orchestrator -->",
+				"<!-- gentle-ai:engram-protocol -->", "<!-- /gentle-ai:engram-protocol -->",
+			} {
+				if strings.Contains(root, marker) {
+					t.Fatalf("uninstall left marker %q in the root; got:\n%s", marker, root)
+				}
+			}
+			if strings.Contains(root, ".gemini/references/") {
+				t.Fatalf("uninstall left an active reference in the root; got:\n%s", root)
+			}
+
+			// The orphans stay on disk by design, inert because nothing reads them.
+			for _, path := range referenceFiles {
+				if _, err := os.Stat(path); err != nil {
+					t.Fatalf("reference file %q was removed; the spec keeps it inert, not deleted: %v", path, err)
+				}
+			}
+		})
+	}
+}

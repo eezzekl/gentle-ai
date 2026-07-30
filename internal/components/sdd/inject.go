@@ -520,11 +520,12 @@ func Inject(homeDir string, adapter agents.Adapter, sddMode model.SDDModeID, opt
 			files = append(files, result.Files...)
 
 		case model.StrategyFileReplace, model.StrategyAppendToFile, model.StrategyInstructionsFile, model.StrategySteeringFile:
-			// For FileReplace/AppendToFile agents, the SDD orchestrator is included
-			// in the generic persona asset. However, if the user chose neutral or
-			// custom persona, the SDD content must still be injected. We append the
-			// SDD orchestrator section to the existing system prompt file so it is
-			// always present regardless of persona choice.
+			// For FileReplace/AppendToFile agents the orchestrator gets its own
+			// marker-bound section in the existing prompt file, so it is present
+			// regardless of which persona the user chose. (It used to ride along
+			// inside the generic persona asset; it no longer does.) For adapters on
+			// the shared reference layout the section carries only the gate stub —
+			// see injectFileAppend.
 			result, err := injectFileAppend(homeDir, adapter, opts)
 			if err != nil {
 				return InjectionResult{}, err

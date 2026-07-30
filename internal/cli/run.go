@@ -59,6 +59,9 @@ type InstallResult struct {
 	BackgroundPolicyEnabled bool
 
 	PiBackground PiBackgroundResolution
+	// RootBudgetWarnings carries one warning per shared root that exceeds
+	// Antigravity's 12,000-character truncation limit. Install never fails on it.
+	RootBudgetWarnings []string
 }
 
 var (
@@ -228,6 +231,18 @@ func RunInstall(args []string, detection system.DetectionResult) (InstallResult,
 		return result, fmt.Errorf("execute install pipeline: %w", result.Execution.Err)
 	}
 	result.PiCodeGraph = runtime.state.piCodeGraph
+
+	// Assembly is complete here, so the shared root can be measured. Computed
+	// before post-apply verification so the warning is recorded on the result
+	// even when verification later reports not-ready.
+	//
+	// Recorded is not the same as shown. When verification is not ready this
+	// function returns an error, and the CLI dispatcher returns that error
+	// without rendering the result — so a failing install still hides the
+	// warning on the CLI path. The interactive path does not share that gap:
+	// ExecuteTUIInstall carries the warning through ManualActions instead.
+	result.RootBudgetWarnings = rootBudgetWarnings(homeDir, runtime.workspaceDir, input.Scope, resolveAdapters(input.Selection.Agents))
+
 	result.Verify = runPostApplyVerification(postApplyVerificationInput{
 		HomeDir:      homeDir,
 		WorkspaceDir: runtime.workspaceDir,
@@ -1846,16 +1861,30 @@ func executeTUIInstallWithBackground(homeDir string, selection model.Selection, 
 	if runtime.state.piCodeGraph != nil {
 		result.ManualActions = append(result.ManualActions, runtime.state.piCodeGraph.ManualActions...)
 	}
+	// The interactive TUI is the default entry point for a plain `gentle-ai`, so
+	// computing the byte-budget warning only in RunInstall would hide it from the
+	// users most likely to end up with an oversized shared root. ManualActions is
+	// already the channel that carries non-fatal completion notices to both the
+	// CLI and TUI completion renderers, so the warning rides it rather than
+	// needing a second delivery path.
+	result.ManualActions = append(result.ManualActions,
+		rootBudgetWarnings(homeDir, runtime.workspaceDir, ScopeGlobal, resolveAdapters(selection.Agents))...)
 	return result, orchestrator
 }
 
 // RenderInstallManualActions renders non-fatal completion actions after the
 // normal verification report so CLI users receive the same drift guidance.
 func RenderInstallManualActions(result InstallResult) string {
-	if result.PiCodeGraph == nil || len(result.PiCodeGraph.ManualActions) == 0 {
-		return ""
+	var b strings.Builder
+
+	if result.PiCodeGraph != nil && len(result.PiCodeGraph.ManualActions) > 0 {
+		b.WriteString("\nManual actions required:\n- " + strings.Join(result.PiCodeGraph.ManualActions, "\n- ") + "\n")
 	}
-	return "\nManual actions required:\n- " + strings.Join(result.PiCodeGraph.ManualActions, "\n- ") + "\n"
+	for _, warning := range result.RootBudgetWarnings {
+		fmt.Fprintf(&b, "\n%s\n", warning)
+	}
+
+	return b.String()
 }
 
 // ResolveInstallProfile returns the platform profile from detection, defaulting to darwin/brew.

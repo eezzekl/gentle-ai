@@ -157,62 +157,39 @@ func injectInternal(homeDir string, adapter agents.Adapter, persona model.Person
 	case model.StrategyFileReplace:
 		promptPath := adapter.SystemPromptFile(homeDir)
 
-		if adapter.Agent() == model.AgentOpenCode {
-			existing, err := readFileOrEmpty(promptPath)
-			if err != nil {
-				return InjectionResult{}, err
-			}
-
-			healed := existing
-
-			// Only strip legacy persona when a managed persona section already
-			// exists — that is the only strong proof the pre-marker content is
-			// stale installer output, not user-authored content.
-			if shouldStripManagedLegacyPersona(existing) {
-				healed = filemerge.StripLegacyPersonaBlock(existing)
-			} else if isExactLegacyPersonaAsset(existing) {
-				// The file is byte-for-byte the old installer asset with no
-				// markers. Safe to replace entirely — no user content to lose.
-				healed = ""
-			}
-
-			healed = filemerge.StripLegacyATLBlock(healed)
-			updated := filemerge.InjectMarkdownSection(healed, "persona", content)
-
-			writeResult, err := filemerge.WriteFileAtomic(promptPath, []byte(updated), 0o644)
-			if err != nil {
-				return InjectionResult{}, err
-			}
-			changed = changed || writeResult.Changed
-			files = append(files, promptPath)
-			break
-		}
-
-		// For non-Gentleman personas (e.g. neutral), the content is just a short
-		// one-liner. Writing ONLY that content would destroy any SDD/engram
-		// sections that are injected later in the pipeline. Instead, we write the
-		// persona content as the base and let subsequent inject steps (SDD, engram)
-		// append their sections. For Gentleman, the content is the full persona
-		// asset which is safe to write as-is.
+		// Despite the strategy name, the persona never replaces this file wholesale.
+		// Other components write their own marker-bound sections into the very same
+		// prompt file, and since the reference-file split those sections are the
+		// only pointer to ~/.gemini/references/ — overwriting the file silently
+		// disconnects the engram protocol and the SDD orchestrator contract.
 		//
-		// If the file already exists and has managed sections (SDD, engram), we
-		// must preserve them — replace only the persona portion at the top.
-		existing, readErr := readFileOrEmpty(promptPath)
-		if readErr != nil {
-			return InjectionResult{}, readErr
+		// So persona owns exactly one marker-bound section here, like every other
+		// component. This used to be an OpenCode-only branch while every other
+		// FileReplace agent wrote the raw asset over the whole file; the shape is
+		// now the same for all of them, including the Gentleman personas that
+		// previously bypassed preservation entirely.
+		existing, err := readFileOrEmpty(promptPath)
+		if err != nil {
+			return InjectionResult{}, err
 		}
 
-		if preserved, ok := preserveManagedSections(existing, content, persona); ok {
-			writeResult, err := filemerge.WriteFileAtomic(promptPath, []byte(preserved), 0o644)
-			if err != nil {
-				return InjectionResult{}, err
-			}
-			changed = changed || writeResult.Changed
-			files = append(files, promptPath)
-			break
+		healed := existing
+
+		// Only strip legacy persona when a managed persona section already
+		// exists — that is the only strong proof the pre-marker content is
+		// stale installer output, not user-authored content.
+		if shouldStripManagedLegacyPersona(existing) {
+			healed = filemerge.StripLegacyPersonaBlock(existing)
+		} else if isExactLegacyPersonaAsset(existing) {
+			// The file is byte-for-byte the old installer asset with no
+			// markers. Safe to replace entirely — no user content to lose.
+			healed = ""
 		}
 
-		writeResult, err := filemerge.WriteFileAtomic(promptPath, []byte(content), 0o644)
+		healed = filemerge.StripLegacyATLBlock(healed)
+		updated := filemerge.InjectMarkdownSection(healed, "persona", content)
+
+		writeResult, err := filemerge.WriteFileAtomic(promptPath, []byte(updated), 0o644)
 		if err != nil {
 			return InjectionResult{}, err
 		}
@@ -230,29 +207,27 @@ func injectInternal(homeDir string, adapter agents.Adapter, persona model.Person
 			changed = true
 		}
 
-		// For non-Gentleman personas, preserve managed sections (same logic
-		// as StrategyFileReplace above).
-		existing, readErr := readFileOrEmpty(promptPath)
-		if readErr != nil {
-			return InjectionResult{}, readErr
+		// Persona owns one marker-bound section inside the instructions file, not
+		// the whole file: the SDD component writes its own section into the same
+		// path, and overwriting the file drops it. Same shape as FileReplace above,
+		// plus the YAML header VS Code requires.
+		existing, err := readFileOrEmpty(promptPath)
+		if err != nil {
+			return InjectionResult{}, err
 		}
 
-		if preserved, ok := preserveManagedSections(existing, wrapInstructionsFile(content), persona); ok {
-			writeResult, err := filemerge.WriteFileAtomic(promptPath, []byte(preserved), 0o644)
-			if err != nil {
-				return InjectionResult{}, err
-			}
-			changed = changed || writeResult.Changed
-			files = append(files, promptPath)
-			break
+		healed := existing
+		if shouldStripManagedLegacyPersona(existing) {
+			healed = filemerge.StripLegacyPersonaBlock(existing)
+		} else if isExactLegacyPersonaAsset(existing) {
+			healed = ""
 		}
+		healed = filemerge.StripLegacyATLBlock(healed)
+		healed = ensureFrontmatter(healed, instructionsFrontmatter)
 
-		// Write the new instructions file (with YAML frontmatter) to the current path.
-		// WriteFileAtomic compares bytes, so it is naturally idempotent: it rewrites
-		// whenever the on-disk content differs from instructionsContent, which covers
-		// the case where an older install wrote persona content without frontmatter.
-		instructionsContent := wrapInstructionsFile(content)
-		writeResult, err := filemerge.WriteFileAtomic(promptPath, []byte(instructionsContent), 0o644)
+		updated := filemerge.InjectMarkdownSection(healed, "persona", content)
+
+		writeResult, err := filemerge.WriteFileAtomic(promptPath, []byte(updated), 0o644)
 		if err != nil {
 			return InjectionResult{}, err
 		}
@@ -262,17 +237,23 @@ func injectInternal(homeDir string, adapter agents.Adapter, persona model.Person
 	case model.StrategySteeringFile:
 		promptPath := adapter.SystemPromptFile(homeDir)
 
-		existing, readErr := readFileOrEmpty(promptPath)
-		if readErr != nil {
-			return InjectionResult{}, readErr
+		// Same contract as the instructions file above: one marker-bound persona
+		// section under Kiro's steering header, never the whole file.
+		existing, err := readFileOrEmpty(promptPath)
+		if err != nil {
+			return InjectionResult{}, err
 		}
 
-		var steeringContent string
-		if preserved, ok := preserveManagedSections(existing, wrapSteeringFile(content), persona); ok {
-			steeringContent = preserved
-		} else {
-			steeringContent = wrapSteeringFile(content)
+		healed := existing
+		if shouldStripManagedLegacyPersona(existing) {
+			healed = filemerge.StripLegacyPersonaBlock(existing)
+		} else if isExactLegacyPersonaAsset(existing) {
+			healed = ""
 		}
+		healed = filemerge.StripLegacyATLBlock(healed)
+		healed = ensureFrontmatter(healed, steeringFrontmatter)
+
+		steeringContent := filemerge.InjectMarkdownSection(healed, "persona", content)
 
 		if err := os.MkdirAll(filepath.Dir(promptPath), 0o755); err != nil {
 			return InjectionResult{}, err
@@ -639,35 +620,6 @@ var osReadFile = func(path string) ([]byte, error) {
 	return content, nil
 }
 
-// preserveManagedSections checks whether the existing file content has
-// gentle-ai managed sections (SDD orchestrator, engram protocol, etc.) and
-// returns new content that preserves those sections while replacing only the
-// persona text before them. Returns ("", false) when no preservation is needed
-// (empty file, Gentleman persona, or no managed markers found).
-func preserveManagedSections(existing, newPersona string, persona model.PersonaID) (string, bool) {
-	if existing == "" || isGentlemanConversationPersona(persona) {
-		return "", false
-	}
-
-	idx := strings.Index(existing, "<!-- gentle-ai:")
-	if idx < 0 {
-		return "", false
-	}
-
-	managedSuffix := existing[idx:]
-	updated := newPersona
-	if !strings.HasSuffix(updated, "\n") {
-		updated += "\n"
-	}
-	if idx > 0 {
-		// There was persona content before the markers — add a blank line separator.
-		updated += "\n"
-	}
-	updated += managedSuffix
-
-	return updated, true
-}
-
 func readFileOrEmpty(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -679,22 +631,37 @@ func readFileOrEmpty(path string) (string, error) {
 	return string(data), nil
 }
 
-func wrapInstructionsFile(content string) string {
-	frontmatter := "---\n" +
+// instructionsFrontmatter and steeringFrontmatter are the YAML headers VS Code
+// and Kiro read. They MUST stay byte-identical to the constants of the same name
+// in internal/components/sdd/inject.go: both components seed the header of the
+// same file, whichever runs first wins, and differing text would make the result
+// depend on component order. TestSharedPromptFileConvergesAcrossComponentOrder in
+// internal/components pins that invariant.
+const (
+	instructionsFrontmatter = "---\n" +
 		"name: Gentle AI Persona\n" +
-		"description: Teaching-oriented persona with SDD orchestration and Engram protocol\n" +
+		"description: Gentleman persona with SDD orchestration and Engram protocol\n" +
 		"applyTo: \"**\"\n" +
-		"---\n\n"
+		"---\n"
 
-	return frontmatter + content
-}
-
-func wrapSteeringFile(content string) string {
-	frontmatter := "---\n" +
+	steeringFrontmatter = "---\n" +
 		"inclusion: always\n" +
-		"---\n\n"
+		"---\n"
+)
 
-	return frontmatter + content
+// ensureFrontmatter prepends the YAML header when the file does not already open
+// with one. It never rewrites an existing header: the one on disk may have been
+// seeded by another component or edited by the user, and replacing it is how a
+// file ends up with two headers — the second of which renders as a literal `---`
+// divider in the loaded prompt rather than as metadata.
+func ensureFrontmatter(content, frontmatter string) string {
+	if strings.HasPrefix(strings.TrimLeft(content, "\n"), "---\n") {
+		return content
+	}
+	if strings.TrimSpace(content) == "" {
+		return frontmatter
+	}
+	return frontmatter + "\n" + strings.TrimLeft(content, "\n")
 }
 
 // isLegacyUnwrappedPersona reports whether content is a Gentleman persona

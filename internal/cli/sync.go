@@ -95,6 +95,11 @@ type SyncResult struct {
 	BackgroundPolicyEnabled bool
 
 	PiBackground PiBackgroundResolution
+	// RootBudgetWarnings carries one warning per shared root that exceeds
+	// Antigravity's 12,000-character truncation limit. It never makes the sync
+	// fail: the content is already on disk and the user is the only one who can
+	// decide what to remove.
+	RootBudgetWarnings []string
 }
 
 // ParseSyncFlags parses the CLI arguments for the sync subcommand.
@@ -1628,6 +1633,11 @@ func runSyncWithSelection(homeDir string, selection model.Selection, background 
 	}
 	result.FilesChanged = len(result.ChangedFiles)
 
+	// Assembly is complete here, so the shared root can be measured. This runs
+	// before the verification early-return below on purpose: an oversized root is
+	// worth reporting even on a run that later fails for an unrelated reason.
+	result.RootBudgetWarnings = rootBudgetWarnings(homeDir, rt.workspaceDir, ScopeGlobal, resolveAdapters(agentIDs))
+
 	// True no-op: agents were discovered but all managed assets were already
 	// current — no file was written or updated. Per spec scenario:
 	// "No managed assets to sync — system completes without modifying files
@@ -1983,7 +1993,7 @@ func RenderSyncReport(result SyncResult) string {
 			fmt.Fprintln(&b, "All managed assets are already up to date. No files changed.")
 		}
 		backgroundReport()
-		return strings.TrimRight(b.String(), "\n")
+		return renderWithRootBudgetWarnings(b.String(), result.RootBudgetWarnings)
 	}
 
 	if result.DryRun {
@@ -2000,7 +2010,7 @@ func RenderSyncReport(result SyncResult) string {
 		fmt.Fprintf(&b, "Prepare steps: %d\n", len(result.Plan.Prepare))
 		fmt.Fprintf(&b, "Apply steps: %d\n", len(result.Plan.Apply))
 		backgroundReport()
-		return strings.TrimRight(b.String(), "\n")
+		return renderWithRootBudgetWarnings(b.String(), result.RootBudgetWarnings)
 	}
 
 	fmt.Fprintln(&b, "gentle-ai sync — managed sync executed")
@@ -2032,7 +2042,25 @@ func RenderSyncReport(result SyncResult) string {
 	}
 	backgroundReport()
 
-	return strings.TrimRight(b.String(), "\n")
+	return renderWithRootBudgetWarnings(b.String(), result.RootBudgetWarnings)
+}
+
+// renderWithRootBudgetWarnings appends any oversized-root warnings to a report
+// tail. Every RenderSyncReport branch routes through here, including the no-op
+// one: an idempotent re-sync changes nothing, but an already-oversized root is
+// exactly the state the user needs told about, and staying silent there would
+// hide it on every run after the first.
+func renderWithRootBudgetWarnings(report string, warnings []string) string {
+	report = strings.TrimRight(report, "\n")
+	if len(warnings) == 0 {
+		return report
+	}
+	var b strings.Builder
+	b.WriteString(report)
+	for _, warning := range warnings {
+		fmt.Fprintf(&b, "\n\n%s", warning)
+	}
+	return b.String()
 }
 
 // withFailedSyncVerificationNote replaces the generic

@@ -44,7 +44,20 @@ Sync twice, any agent order → byte-identical output.
 
 ### D5: Stub content generated in Go
 
-`renderSessionBootstrapStub()` (engram pkg) and `renderSDDGateStub()` (sdd pkg), like `RenderTriggerRules` — wording invariants unit-testable, no embed plumbing. Each stub MUST contain: imperative verb + "with your file-read tool"; absolute `~/.gemini/references/...` path; "in your home directory, NOT the workspace"; "treat as active session instructions"; the SDD stub gates "before handling any SDD command or request". No test-marker blocks in shipped output.
+`renderSessionBootstrapStub()` (engram pkg) and `renderSDDGateStub()` (sdd pkg), like `RenderTriggerRules` — wording invariants unit-testable, no embed plumbing. No test-marker blocks in shipped output.
+
+Both stubs MUST contain an imperative verb, "with your file-read tool", and the absolute `~/.gemini/references/...` path. Beyond that the two stubs carry different wording, because they gate different things:
+
+| | `session-bootstrap` (engram) | `sdd-stub` (sdd) |
+|---|---|---|
+| When it must fire | before the model's first reply | before any SDD command or its natural-language equivalent |
+| Lists SDD commands | no | yes |
+| "in your home directory, NOT the workspace" | required | not required |
+| "treat as active session instructions" | required | not required |
+
+The bootstrap stub carries the extra two clauses because it fires unprompted at session start, where the model has no task context to disambiguate a `~`-anchored path from a workspace-relative one, and where nothing else tells it the content is instructions rather than reference material. The SDD stub fires in response to an explicit SDD command, so the surrounding request already supplies that framing.
+
+This split is the contract the spec states: *Session-Bootstrap Block Wording* requires the workspace clarification and the active-session-instructions framing; *SDD-Stub Block Wording* requires the command list, the imperative read, and no orchestration detail. An earlier draft of this decision required all clauses in every stub; the spec and the implementation both settled on the split above, and this section was corrected to match rather than the other way round.
 
 ### D6: Ordering unchanged; block position no longer matters
 
@@ -53,6 +66,26 @@ Persona→SDD→Engram preserved (component order at `sync.go:324-326` is load-b
 ### D7: Byte-budget warning
 
 Check at end of sync (`RenderSyncReport`, `sync.go:~1570`, or its call site) and at install completion (`RenderInstallManualActions`, `run.go:1546` — already the home for non-fatal completion actions): read the assembled `SystemPromptFile` for shared-root agents; `len(bytes) > 12000` → WARNING (bytes ≥ chars, conservative). Message: path, actual size, 12,000 limit, "content past the limit is silently truncated in Antigravity sessions", remediation hint. Never fails.
+
+### D8 (discovered in Phase 4): persona must own a marker-bound section
+
+**Problem**: the Phase 4 convergence test (task 4.6) proved D3 false for the root. `persona.Inject` on `StrategyFileReplace` adapters wrote the raw persona asset as the ENTIRE prompt file whenever a Gentleman variant was selected, because `preserveManagedSections` returned early for `isGentlemanConversationPersona`. Two consequences, both reproduced:
+- **Order divergence**: gemini-first yielded `[sdd][engram][persona]` while antigravity-first yielded `[persona][sdd][engram]`. Antigravity's `StrategyAppendToFile` branch strips the unmarked persona via `StripLegacyPersonaBlock` and re-appends it marked at the end, so the same inputs produced different bytes.
+- **Silent stub loss (the serious one)**: a persona-only sync for gemini wiped BOTH stubs from the shared root. Pre-split that destroyed inline bodies; post-split the root is the only pointer to `~/.gemini/references/`, so it disconnects engram and the SDD orchestrator with no error and no warning.
+
+**Choice**: every adapter whose prompt file is shared with another component now writes exactly one marker-bound `gentle-ai:persona` section and preserves managed sections, regardless of persona variant — the shape OpenCode already had via a special case. That special case is gone; the path is uniform across all three affected strategies:
+- `StrategyFileReplace` — gemini-cli, cursor, codex, qwen, kilocode, opencode.
+- `StrategyInstructionsFile` (VS Code) and `StrategySteeringFile` (Kiro) — same shape, plus the YAML header those two require. `wrapInstructionsFile`/`wrapSteeringFile` are replaced by frontmatter constants plus `ensureFrontmatter`, which seeds the header only when the file has none and never rewrites an existing one.
+
+`StrategyAppendToFile` (antigravity, windsurf, pi) already had the correct shape and is untouched.
+
+**Frontmatter ownership**: persona and sdd each hold their own copy of the header constants, and both seed the same file, so drift between them would make the file's metadata depend on component order. They are now byte-identical, and persona adopted sdd's existing `description` wording so the shipped `sdd-vscode-instructions.golden` did not have to change. `TestSharedPromptFileConvergesAcrossComponentOrder` pins the invariant on rendered bytes rather than on the unexported constants.
+
+**Evidence**: `internal/components/persona/shared_root_preservation_test.go` (managed-section preservation, marker-bound shape, idempotency, user-content safety, adapter-order convergence, and header seeding/duplication for the wrapped strategies), `TestEnsureFrontmatterAddsKiroHeaderWithoutDuplicating` in `internal/components/persona/inject_test.go` (replaces the former `wrapSteeringFile` test, same guarantee), plus `TestSyncOrderConvergence` and `TestSharedPromptFileConvergesAcrossComponentOrder` in `internal/components/reference_layout_integration_test.go`. Golden churn was one file: `persona-kiro-gentleman.golden` gained the two persona markers. No persona goldens exist for gemini, cursor, codex, qwen or kilocode.
+
+**What is deliberately NOT asserted**: byte-equality of a wrapped prompt file across arbitrary *component* orders. The pipeline fixes persona before SDD at `internal/cli/sync.go:329-331` and that order is load-bearing (persona's `StripLegacyPersonaBlock` would otherwise treat freshly written managed sections as legacy), so "SDD first" is a state the product never produces. Block order across *agents* sharing one root is asserted, because both orders are real there.
+
+**Scope note**: this supersedes D6's claim that block position no longer matters — it did not matter for truncation, but it did make D3's convergence claim false. Ordering is now stable because persona occupies a replaceable section instead of the whole file.
 
 ## Data Flow
 

@@ -2836,19 +2836,46 @@ func TestReconciledStylesCarryAllMovedPersonaRules(t *testing.T) {
 	})
 }
 
-func TestWrapSteeringFileAddsKiroFrontmatter(t *testing.T) {
-	got := wrapSteeringFile("## Persona\n\nBody")
+// TestEnsureFrontmatterAddsKiroHeaderWithoutDuplicating replaces the former
+// wrapSteeringFile test. The guarantee is the same — Kiro's steering file opens
+// with its YAML header and the body follows — but persona no longer owns the
+// whole file, so the header is seeded rather than prepended unconditionally.
+func TestEnsureFrontmatterAddsKiroHeaderWithoutDuplicating(t *testing.T) {
+	t.Run("adds the header to a body that has none", func(t *testing.T) {
+		got := ensureFrontmatter("## Persona\n\nBody", steeringFrontmatter)
 
-	for _, want := range []string{
-		"---\n",
-		"inclusion: always",
-		"---\n\n## Persona",
-		"Body",
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("wrapSteeringFile() missing %q; got:\n%s", want, got)
+		for _, want := range []string{
+			"---\n",
+			"inclusion: always",
+			"---\n\n## Persona",
+			"Body",
+		} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("ensureFrontmatter() missing %q; got:\n%s", want, got)
+			}
 		}
-	}
+	})
+
+	t.Run("adds the header to an empty file", func(t *testing.T) {
+		if got := ensureFrontmatter("", steeringFrontmatter); got != steeringFrontmatter {
+			t.Fatalf("ensureFrontmatter(empty) = %q, want the bare header", got)
+		}
+	})
+
+	t.Run("leaves an existing header untouched", func(t *testing.T) {
+		existing := "---\ninclusion: always\n---\n\n<!-- gentle-ai:sdd-orchestrator -->\nstub\n<!-- /gentle-ai:sdd-orchestrator -->\n"
+		if got := ensureFrontmatter(existing, steeringFrontmatter); got != existing {
+			t.Fatalf("ensureFrontmatter() rewrote an existing header:\n%s", got)
+		}
+	})
+
+	t.Run("does not duplicate a header authored with different fields", func(t *testing.T) {
+		existing := "---\ninclusion: manual\n---\n\nbody\n"
+		got := ensureFrontmatter(existing, steeringFrontmatter)
+		if got != existing {
+			t.Fatalf("ensureFrontmatter() replaced a user-authored header:\n%s", got)
+		}
+	})
 }
 
 func TestMergeJSONFileToleratingMalformed(t *testing.T) {
