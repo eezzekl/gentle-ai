@@ -90,11 +90,16 @@ func normalizePersona(value string) (model.PersonaID, error) {
 	switch model.PersonaID(value) {
 	case model.PersonaGentle:
 		return model.PersonaGentle, nil
-	case model.PersonaGentleman, model.PersonaGentlemanNeutralArtifacts:
-		// Back-compat aliases: both map to PersonaGentle.
-		// gentleman-neutral-artifacts was always a no-op variant of gentleman;
-		// migration convergence is intentional (see design §migration matrix).
+	case model.PersonaGentleman:
+		// Back-compat alias for the teaching-first style.
 		return model.PersonaGentle, nil
+	case model.PersonaGentlemanNeutralArtifacts:
+		// Back-compat alias that maps to NEUTRAL, not gentle (design Decision 5).
+		// The alias emitted full gentleman behavior despite its name; issue #1702
+		// defect 1 documents that as the bug, so normalizing it to gentle would
+		// carry the defect forward. This also converges with PR #1712's remap,
+		// which is what makes the two changes merge-order independent.
+		return model.PersonaNeutral, nil
 	case model.PersonaNeutral:
 		return model.PersonaNeutral, nil
 	case model.PersonaCustom:

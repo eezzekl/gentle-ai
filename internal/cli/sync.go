@@ -1312,15 +1312,24 @@ func applyResolvedPersona(selection *model.Selection, persisted persistedSyncSta
 	}
 
 	switch model.PersonaID(persisted.persona) {
-	case model.PersonaGentleman, model.PersonaGentlemanNeutralArtifacts:
-		// Legacy aliases: both converge to gentle+argentina (proving hybrid was no-op).
+	case model.PersonaGentleman:
 		selection.Persona = model.PersonaGentle
 		selection.Region = string(model.RegionArgentina)
 		selection.ArtifactsInEnglish = true
 
-	case model.PersonaNeutral:
+	case model.PersonaGentlemanNeutralArtifacts:
+		// Migrates to NEUTRAL, not gentle (design Decision 5). The alias promised
+		// neutral and delivered voseo; #1702 defect 1 calls that the bug. Same
+		// target as PR #1712's remap, so either merge order converges here.
 		selection.Persona = model.PersonaNeutral
-		selection.Region = string(model.RegionUserLanguage)
+		selection.Region = ""
+		selection.ArtifactsInEnglish = true
+
+	case model.PersonaNeutral:
+		// Regionless by definition: no region, artifacts forced to English (the
+		// pre-change neutral asset already mandated English artifacts).
+		selection.Persona = model.PersonaNeutral
+		selection.Region = ""
 		selection.ArtifactsInEnglish = true
 
 	case model.PersonaCustom:

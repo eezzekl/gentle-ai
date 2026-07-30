@@ -114,11 +114,11 @@ const (
 type RegionID string
 
 const (
-	RegionArgentina  RegionID = "argentina"
-	RegionMexico     RegionID = "mexico"
-	RegionColombia   RegionID = "colombia"
-	RegionSpain      RegionID = "spain"
-	RegionChile      RegionID = "chile"
+	RegionArgentina    RegionID = "argentina"
+	RegionMexico       RegionID = "mexico"
+	RegionColombia     RegionID = "colombia"
+	RegionSpain        RegionID = "spain"
+	RegionChile        RegionID = "chile"
 	RegionUserLanguage RegionID = "user-language" // follow the language the user writes in
 )
 

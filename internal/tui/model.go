@@ -2075,12 +2075,19 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 			if m.Selection.Preset != "" && m.Selection.Preset != model.PresetCustom {
 				m.Selection.Components = componentsForPreset(m.Selection.Preset, m.Selection.Persona)
 			}
-			// Custom persona is unmanaged — no regional voice, so skip the
-			// language/region screen. Managed personas (gentle/neutral) pick a region.
-			if m.Selection.Persona == model.PersonaCustom {
-				m.setScreen(ScreenPreset)
-			} else {
+			// Only `gentle` reaches the language/region screen (design Decision 5).
+			// `neutral` is regionless by definition and `custom` is unmanaged, so
+			// both skip it. Neutral still carries the artifacts contract, which is
+			// forced on rather than offered as a checkbox: the pre-change neutral
+			// asset already mandated English artifacts unconditionally.
+			if m.Selection.Persona == model.PersonaGentle {
 				m.setScreen(ScreenPersonaLanguage)
+			} else {
+				if m.Selection.Persona == model.PersonaNeutral {
+					m.Selection.Region = ""
+					m.Selection.ArtifactsInEnglish = true
+				}
+				m.setScreen(ScreenPreset)
 			}
 			return m, nil
 		}
@@ -3195,14 +3202,16 @@ func buildProgressLabels(resolved planner.ResolvedPlan, communityTools []model.C
 	return labels
 }
 
-// presetBackScreen resolves where ScreenPreset returns to: the language/region
-// screen for managed personas (gentle/neutral), or directly to the persona
-// screen for custom (which skips the language screen on the way forward).
+// presetBackScreen resolves where ScreenPreset returns to. It must mirror the
+// forward route exactly: only `gentle` passes through the language/region
+// screen, so only `gentle` returns through it. Sending `neutral` back to a
+// screen it never saw would strand the user on a region selection that does not
+// apply to their style.
 func (m Model) presetBackScreen() Screen {
-	if m.Selection.Persona == model.PersonaCustom {
-		return ScreenPersona
+	if m.Selection.Persona == model.PersonaGentle {
+		return ScreenPersonaLanguage
 	}
-	return ScreenPersonaLanguage
+	return ScreenPersona
 }
 
 func (m Model) goBack(cmd *tea.Cmd) Model {

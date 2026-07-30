@@ -4243,8 +4243,27 @@ func TestRunSyncPreservesCompletePersistedState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("state.Read after sync: %v", err)
 	}
-	if !reflect.DeepEqual(after, before) {
-		t.Fatalf("CLI sync changed persisted state:\nafter:  %#v\nbefore: %#v", after, before)
+
+	// Sync is allowed to persist exactly one thing: the resolved two-axis persona
+	// fields, so a later sync reads migrated values instead of re-applying legacy
+	// aliases (spec R2). Everything else must survive byte-for-byte, which is what
+	// this test has always been about — a sync that silently drops model
+	// assignments or skills is the regression it guards.
+	//
+	// The fixture persists persona "neutral", which is regionless under design
+	// Decision 5, so the migration resolves to region "" with English artifacts.
+	if after.Region != "" {
+		t.Errorf("migrated Region = %q, want empty (neutral is regionless)", after.Region)
+	}
+	if !after.ArtifactsInEnglish {
+		t.Error("migrated ArtifactsInEnglish = false, want true")
+	}
+
+	normalized := after
+	normalized.Region = before.Region
+	normalized.ArtifactsInEnglish = before.ArtifactsInEnglish
+	if !reflect.DeepEqual(normalized, before) {
+		t.Fatalf("CLI sync changed persisted state beyond the migrated persona fields:\nafter:  %#v\nbefore: %#v", after, before)
 	}
 }
 
@@ -4561,17 +4580,20 @@ func TestApplyResolvedPersonaMigrationMatrix(t *testing.T) {
 			wantArtifacts:    true,
 		},
 		{
-			name:             "gentleman-neutral-artifacts migrates to gentle+argentina+true (converges with gentleman)",
+			// Decision 5: targets neutral, NOT gentle. The alias promised neutral
+			// and delivered voseo (#1702 defect 1), and this is also PR #1712's
+			// remap target, which is what makes the two changes order-independent.
+			name:             "gentleman-neutral-artifacts migrates to neutral+regionless+true",
 			persistedPersona: "gentleman-neutral-artifacts",
-			wantPersona:      model.PersonaGentle,
-			wantRegion:       string(model.RegionArgentina),
+			wantPersona:      model.PersonaNeutral,
+			wantRegion:       "",
 			wantArtifacts:    true,
 		},
 		{
-			name:             "neutral migrates to neutral+user-language+true",
+			name:             "neutral migrates to neutral+regionless+true",
 			persistedPersona: "neutral",
 			wantPersona:      model.PersonaNeutral,
-			wantRegion:       string(model.RegionUserLanguage),
+			wantRegion:       "",
 			wantArtifacts:    true,
 		},
 		{
@@ -4619,22 +4641,49 @@ func TestApplyResolvedPersonaMigrationMatrix(t *testing.T) {
 // TestApplyResolvedPersonaGentlemanAndNeutralArtifactsConverge asserts that
 // "gentleman" and "gentleman-neutral-artifacts" produce byte-identical tuples,
 // proving the hybrid was a no-op at the migration layer.
-func TestApplyResolvedPersonaGentlemanAndNeutralArtifactsConverge(t *testing.T) {
-	selA := model.Selection{}
-	applyResolvedPersona(&selA, persistedSyncState{persona: "gentleman"})
+// TestApplyResolvedPersonaHybridConvergesWithNeutral replaces the pre-Decision-5
+// test that asserted the hybrid converged with `gentleman`. It now converges with
+// `neutral` instead, which is the same target PR #1712's remap uses — that shared
+// target is what makes the two changes merge-order independent.
+func TestApplyResolvedPersonaHybridConvergesWithNeutral(t *testing.T) {
+	hybrid := model.Selection{}
+	applyResolvedPersona(&hybrid, persistedSyncState{persona: "gentleman-neutral-artifacts"})
 
-	selB := model.Selection{}
-	applyResolvedPersona(&selB, persistedSyncState{persona: "gentleman-neutral-artifacts"})
+	neutral := model.Selection{}
+	applyResolvedPersona(&neutral, persistedSyncState{persona: "neutral"})
 
-	if selA.Persona != selB.Persona {
-		t.Errorf("Persona mismatch: gentleman=%q, gentleman-neutral-artifacts=%q", selA.Persona, selB.Persona)
+	if hybrid.Persona != neutral.Persona {
+		t.Errorf("Persona mismatch: hybrid=%q, neutral=%q", hybrid.Persona, neutral.Persona)
 	}
-	if selA.Region != selB.Region {
-		t.Errorf("Region mismatch: gentleman=%q, gentleman-neutral-artifacts=%q", selA.Region, selB.Region)
+	if hybrid.Region != neutral.Region {
+		t.Errorf("Region mismatch: hybrid=%q, neutral=%q", hybrid.Region, neutral.Region)
 	}
-	if selA.ArtifactsInEnglish != selB.ArtifactsInEnglish {
-		t.Errorf("ArtifactsInEnglish mismatch: gentleman=%v, gentleman-neutral-artifacts=%v",
-			selA.ArtifactsInEnglish, selB.ArtifactsInEnglish)
+	if hybrid.ArtifactsInEnglish != neutral.ArtifactsInEnglish {
+		t.Errorf("ArtifactsInEnglish mismatch: hybrid=%v, neutral=%v",
+			hybrid.ArtifactsInEnglish, neutral.ArtifactsInEnglish)
+	}
+}
+
+// TestApplyResolvedPersonaHybridDoesNotConvergeWithGentleman is the negative
+// half, and the one that actually encodes #1702 defect 1: the hybrid must stop
+// receiving the Gentleman voseo persona. Without this, a future change could
+// quietly restore the old convergence and the test above would still pass.
+func TestApplyResolvedPersonaHybridDoesNotConvergeWithGentleman(t *testing.T) {
+	hybrid := model.Selection{}
+	applyResolvedPersona(&hybrid, persistedSyncState{persona: "gentleman-neutral-artifacts"})
+
+	gentleman := model.Selection{}
+	applyResolvedPersona(&gentleman, persistedSyncState{persona: "gentleman"})
+
+	if hybrid.Persona == gentleman.Persona && hybrid.Region == gentleman.Region {
+		t.Fatalf("the hybrid alias still resolves to the gentleman tuple {%q, %q} — #1702 defect 1 regression",
+			hybrid.Persona, hybrid.Region)
+	}
+	if hybrid.Region != "" {
+		t.Errorf("hybrid Region = %q, want empty (neutral is regionless)", hybrid.Region)
+	}
+	if !hybrid.ArtifactsInEnglish {
+		t.Error("hybrid must keep ArtifactsInEnglish = true — English artifacts is the one thing the alias did deliver")
 	}
 }
 

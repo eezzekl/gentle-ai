@@ -25,8 +25,19 @@ import "fmt"
 //   - true  → "All generated artifacts (code, comments, identifiers) in English."
 //   - false → "Generated artifacts may be in the selected language."
 func ComposeLanguageDirective(region RegionID, artifactsInEnglish bool) string {
-	langClause := composeLanguageClause(region)
 	artifactsClause := composeArtifactsClause(artifactsInEnglish)
+
+	// An empty region is the ABSENCE of the region axis, not a selection on it —
+	// the `neutral` style is regionless by definition (design Decision 5). Emit
+	// the artifacts contract alone; a reply-voice clause here would assert a
+	// regional voice the user never chose. This case must stay ahead of the
+	// free-text branch below, which would otherwise render the empty string into
+	// "Reply in the following language/region: ." — a dangling period.
+	if region == "" {
+		return fmt.Sprintf("## Reply Language and Region\n\n%s", artifactsClause)
+	}
+
+	langClause := composeLanguageClause(region)
 	return fmt.Sprintf("## Reply Language and Region\n\n%s\n\n%s", langClause, artifactsClause)
 }
 

@@ -2991,7 +2991,10 @@ func TestIsGentlePersonaAcceptsAllFamilyIDs(t *testing.T) {
 	}{
 		{model.PersonaGentle, true},
 		{model.PersonaGentleman, true},
-		{model.PersonaGentlemanNeutralArtifacts, true},
+		// Decision 5: the hybrid alias migrates to `neutral`, so it must NOT be
+		// treated as gentle here. Returning true would keep routing it to the
+		// Gentleman asset and output style — #1702 defect 1 verbatim.
+		{model.PersonaGentlemanNeutralArtifacts, false},
 		{model.PersonaNeutral, false},
 		{model.PersonaCustom, false},
 	}

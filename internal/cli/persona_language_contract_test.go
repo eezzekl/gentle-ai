@@ -10,10 +10,10 @@ import (
 // personas and back-compat aliases. This supersedes the older single-case test.
 func TestNormalizePersonaTable(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     string
-		wantID    model.PersonaID
-		wantErr   bool
+		name    string
+		input   string
+		wantID  model.PersonaID
+		wantErr bool
 	}{
 		{
 			name:    "gentle is accepted",
@@ -40,9 +40,9 @@ func TestNormalizePersonaTable(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "gentleman-neutral-artifacts back-compat alias maps to gentle (migration convergence)",
+			name:    "gentleman-neutral-artifacts back-compat alias maps to neutral (Decision 5)",
 			input:   "gentleman-neutral-artifacts",
-			wantID:  model.PersonaGentle,
+			wantID:  model.PersonaNeutral,
 			wantErr: false,
 		},
 		{
@@ -79,16 +79,30 @@ func TestNormalizePersonaTable(t *testing.T) {
 // TestNormalizePersonaBothGentlemanAliasesConverge verifies that "gentleman" and
 // "gentleman-neutral-artifacts" normalize to byte-identical values, proving that
 // the hybrid was always a no-op and migration convergence is correct.
-func TestNormalizePersonaBothGentlemanAliasesConverge(t *testing.T) {
-	a, err := normalizePersona("gentleman")
+// TestNormalizePersonaAliasesDoNotShareATarget inverts what this test asserted
+// before design Decision 5. The two legacy aliases MUST resolve differently:
+// `gentleman` keeps the teaching voice, while `gentleman-neutral-artifacts`
+// resolves to `neutral`, because issue #1702 defect 1 documents that the alias
+// emitted full gentleman behavior despite its name. Convergence here would carry
+// that defect forward and would also desynchronize validation from the migration
+// matrix in sync.go.
+func TestNormalizePersonaAliasesDoNotShareATarget(t *testing.T) {
+	gentleman, err := normalizePersona("gentleman")
 	if err != nil {
 		t.Fatalf("normalizePersona(gentleman) error = %v", err)
 	}
-	b, err := normalizePersona("gentleman-neutral-artifacts")
+	hybrid, err := normalizePersona("gentleman-neutral-artifacts")
 	if err != nil {
 		t.Fatalf("normalizePersona(gentleman-neutral-artifacts) error = %v", err)
 	}
-	if a != b {
-		t.Errorf("migration convergence failed: gentleman → %q, gentleman-neutral-artifacts → %q; must be identical", a, b)
+
+	if gentleman != model.PersonaGentle {
+		t.Errorf("normalizePersona(gentleman) = %q, want %q", gentleman, model.PersonaGentle)
+	}
+	if hybrid != model.PersonaNeutral {
+		t.Errorf("normalizePersona(gentleman-neutral-artifacts) = %q, want %q", hybrid, model.PersonaNeutral)
+	}
+	if gentleman == hybrid {
+		t.Errorf("the two legacy aliases must NOT share a target; both resolved to %q", gentleman)
 	}
 }

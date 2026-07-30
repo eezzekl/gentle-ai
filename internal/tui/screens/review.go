@@ -109,8 +109,11 @@ func reviewPersonaLabel(persona model.PersonaID) string {
 }
 
 func reviewRegionLabel(region string) string {
+	// An empty region is not an unfilled field — it is the `neutral` style's
+	// defined state (design Decision 5). "not set" would read as a mistake the
+	// user still has to correct, right at the confirm-before-write screen.
 	if region == "" {
-		return "not set"
+		return "none (regionless style)"
 	}
 	if label, ok := model.RegionMap[model.RegionID(region)]; ok {
 		return label

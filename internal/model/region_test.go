@@ -10,80 +10,80 @@ import (
 // correct artifacts clause.
 func TestComposeLanguageDirectiveCuratedRegions(t *testing.T) {
 	tests := []struct {
-		name              string
-		region            RegionID
+		name               string
+		region             RegionID
 		artifactsInEnglish bool
-		wantLangPhrase    string
+		wantLangPhrase     string
 		wantArtifactPhrase string
 	}{
 		{
-			name:              "argentina artifacts-in-english",
-			region:            RegionArgentina,
+			name:               "argentina artifacts-in-english",
+			region:             RegionArgentina,
 			artifactsInEnglish: true,
-			wantLangPhrase:    "Rioplatense",
+			wantLangPhrase:     "Rioplatense",
 			wantArtifactPhrase: "English",
 		},
 		{
-			name:              "argentina artifacts-in-user-language",
-			region:            RegionArgentina,
+			name:               "argentina artifacts-in-user-language",
+			region:             RegionArgentina,
 			artifactsInEnglish: false,
-			wantLangPhrase:    "Rioplatense",
+			wantLangPhrase:     "Rioplatense",
 			wantArtifactPhrase: "language",
 		},
 		{
-			name:              "mexico artifacts-in-english",
-			region:            RegionMexico,
+			name:               "mexico artifacts-in-english",
+			region:             RegionMexico,
 			artifactsInEnglish: true,
-			wantLangPhrase:    "Mexico",
+			wantLangPhrase:     "Mexico",
 			wantArtifactPhrase: "English",
 		},
 		{
-			name:              "mexico artifacts-in-user-language",
-			region:            RegionMexico,
+			name:               "mexico artifacts-in-user-language",
+			region:             RegionMexico,
 			artifactsInEnglish: false,
-			wantLangPhrase:    "Mexico",
+			wantLangPhrase:     "Mexico",
 			wantArtifactPhrase: "language",
 		},
 		{
-			name:              "colombia artifacts-in-english",
-			region:            RegionColombia,
+			name:               "colombia artifacts-in-english",
+			region:             RegionColombia,
 			artifactsInEnglish: true,
-			wantLangPhrase:    "Colombia",
+			wantLangPhrase:     "Colombia",
 			wantArtifactPhrase: "English",
 		},
 		{
-			name:              "colombia artifacts-in-user-language",
-			region:            RegionColombia,
+			name:               "colombia artifacts-in-user-language",
+			region:             RegionColombia,
 			artifactsInEnglish: false,
-			wantLangPhrase:    "Colombia",
+			wantLangPhrase:     "Colombia",
 			wantArtifactPhrase: "language",
 		},
 		{
-			name:              "spain artifacts-in-english",
-			region:            RegionSpain,
+			name:               "spain artifacts-in-english",
+			region:             RegionSpain,
 			artifactsInEnglish: true,
-			wantLangPhrase:    "Spain",
+			wantLangPhrase:     "Spain",
 			wantArtifactPhrase: "English",
 		},
 		{
-			name:              "spain artifacts-in-user-language",
-			region:            RegionSpain,
+			name:               "spain artifacts-in-user-language",
+			region:             RegionSpain,
 			artifactsInEnglish: false,
-			wantLangPhrase:    "Spain",
+			wantLangPhrase:     "Spain",
 			wantArtifactPhrase: "language",
 		},
 		{
-			name:              "chile artifacts-in-english",
-			region:            RegionChile,
+			name:               "chile artifacts-in-english",
+			region:             RegionChile,
 			artifactsInEnglish: true,
-			wantLangPhrase:    "Chile",
+			wantLangPhrase:     "Chile",
 			wantArtifactPhrase: "English",
 		},
 		{
-			name:              "chile artifacts-in-user-language",
-			region:            RegionChile,
+			name:               "chile artifacts-in-user-language",
+			region:             RegionChile,
 			artifactsInEnglish: false,
-			wantLangPhrase:    "Chile",
+			wantLangPhrase:     "Chile",
 			wantArtifactPhrase: "language",
 		},
 	}
@@ -162,5 +162,57 @@ func TestComposeLanguageDirectiveArgentinaTrueMatchesProdText(t *testing.T) {
 		if !strings.Contains(got, phrase) {
 			t.Errorf("argentina+true directive missing %q; got:\n%q", phrase, got)
 		}
+	}
+}
+
+// ─── Decision 5: neutral is regionless ───────────────────────────────────────
+
+// TestComposeLanguageDirectiveEmptyRegionEmitsNoVoiceClause pins the regionless
+// case. `neutral` carries no region by definition, so the directive must supply
+// the artifacts contract and nothing else.
+//
+// Before Decision 5 an empty region fell through to the free-text branch and
+// emitted the literal string "Reply in the following language/region: ." — a
+// dangling period injected into every un-migrated install.
+func TestComposeLanguageDirectiveEmptyRegionEmitsNoVoiceClause(t *testing.T) {
+	for _, artifactsInEnglish := range []bool{true, false} {
+		got := ComposeLanguageDirective("", artifactsInEnglish)
+
+		if strings.Contains(got, "Reply in") {
+			t.Errorf("ComposeLanguageDirective(\"\", %v) emitted a reply-voice clause; got:\n%s", artifactsInEnglish, got)
+		}
+		if strings.Contains(got, "language/region: .") {
+			t.Errorf("ComposeLanguageDirective(\"\", %v) emitted the malformed free-text clause; got:\n%s", artifactsInEnglish, got)
+		}
+		if !strings.Contains(got, "generated artifacts") && !strings.Contains(got, "Generated artifacts") {
+			t.Errorf("ComposeLanguageDirective(\"\", %v) dropped the artifacts clause; got:\n%s", artifactsInEnglish, got)
+		}
+	}
+}
+
+// TestComposeLanguageDirectiveEmptyRegionDiffersFromUserLanguage keeps the two
+// regionless-looking cases distinct. `user-language` is a real selection a
+// gentle user makes ("follow how I write"); an empty region is the absence of
+// the axis entirely. Collapsing them would make `neutral` claim a reply-voice
+// instruction it never selected.
+func TestComposeLanguageDirectiveEmptyRegionDiffersFromUserLanguage(t *testing.T) {
+	empty := ComposeLanguageDirective("", true)
+	userLang := ComposeLanguageDirective(RegionUserLanguage, true)
+
+	if empty == userLang {
+		t.Fatalf("empty region and user-language must compose different directives; both were:\n%s", empty)
+	}
+	if !strings.Contains(userLang, "Reply in the language the user writes in") {
+		t.Errorf("user-language lost its reply clause; got:\n%s", userLang)
+	}
+}
+
+// TestComposeLanguageDirectiveFreeTextStillWorks guards against the empty-region
+// fix swallowing the free-text branch it was carved out of.
+func TestComposeLanguageDirectiveFreeTextStillWorks(t *testing.T) {
+	got := ComposeLanguageDirective("yucateco", true)
+
+	if !strings.Contains(got, "yucateco") {
+		t.Errorf("free-text region not injected verbatim; got:\n%s", got)
 	}
 }

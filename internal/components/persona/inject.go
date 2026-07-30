@@ -502,14 +502,16 @@ func shouldStripManagedLegacyPersona(existing string) bool {
 	return strings.Contains(existing, "<!-- gentle-ai:persona -->")
 }
 
-// isGentlePersona returns true for all IDs in the gentle/gentleman family:
-// PersonaGentle (canonical), PersonaGentleman (back-compat alias), and
-// PersonaGentlemanNeutralArtifacts (migration alias). All three map to the
-// same behavior — the gentleman asset with a composed language directive.
+// isGentlePersona returns true for the teaching-first style and its back-compat
+// alias: PersonaGentle (canonical) and PersonaGentleman.
+//
+// PersonaGentlemanNeutralArtifacts is deliberately NOT in this set. It migrates
+// to `neutral` (design Decision 5), so returning true here would keep routing it
+// to the Gentleman output style and asset — which is exactly the behavior #1702
+// defect 1 reported as the bug.
 func isGentlePersona(persona model.PersonaID) bool {
 	return persona == model.PersonaGentle ||
-		persona == model.PersonaGentleman ||
-		persona == model.PersonaGentlemanNeutralArtifacts
+		persona == model.PersonaGentleman
 }
 
 // residualChannel reports whether the adapter already delivers tone/language/

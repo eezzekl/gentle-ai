@@ -215,3 +215,25 @@ func TestRenderReviewShowsArtifactsFlagOnAndOff(t *testing.T) {
 		t.Fatalf("RenderReview should show artifacts flag unchecked when ArtifactsInEnglish=false; output:\n%s", off)
 	}
 }
+
+// TestRenderReviewShowsRegionlessStateForNeutral pins the confirm-before-write
+// reading for a regionless style: the region line must state that none applies,
+// not render blank or "not set", which would read as an unfinished field.
+func TestRenderReviewShowsRegionlessStateForNeutral(t *testing.T) {
+	out := RenderReview(planner.ReviewPayload{
+		Agents:             []model.AgentID{model.AgentClaudeCode},
+		Persona:            model.PersonaNeutral,
+		Region:             "",
+		ArtifactsInEnglish: true,
+	}, 0)
+
+	if !strings.Contains(out, "none (regionless style)") {
+		t.Fatalf("RenderReview() must make the regionless state legible; output:\n%s", out)
+	}
+	if strings.Contains(out, "not set") {
+		t.Fatalf("RenderReview() still reads the regionless state as unfinished; output:\n%s", out)
+	}
+	if !strings.Contains(out, "[x]") {
+		t.Fatalf("RenderReview() must show artifacts-in-English on for neutral; output:\n%s", out)
+	}
+}

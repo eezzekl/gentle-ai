@@ -30,13 +30,24 @@ func TestPersonaGentleRoutesToLanguageScreen(t *testing.T) {
 	}
 }
 
-func TestPersonaNeutralRoutesToLanguageScreen(t *testing.T) {
+// TestPersonaNeutralSkipsLanguageScreen pins design Decision 5: `neutral` is
+// regionless by definition, so it must never reach the region selection. It
+// still carries the artifacts contract, forced on rather than offered — the
+// pre-change neutral asset already mandated English artifacts unconditionally.
+func TestPersonaNeutralSkipsLanguageScreen(t *testing.T) {
 	m := NewModel(system.DetectionResult{}, "dev")
 	m.Screen = ScreenPersona
 	m.Cursor = personaCursor(t, model.PersonaNeutral)
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if got := updated.(Model).Screen; got != ScreenPersonaLanguage {
-		t.Fatalf("after selecting neutral, Screen = %v, want ScreenPersonaLanguage", got)
+	got := updated.(Model)
+	if got.Screen != ScreenPreset {
+		t.Fatalf("after selecting neutral, Screen = %v, want ScreenPreset", got.Screen)
+	}
+	if got.Selection.Region != "" {
+		t.Fatalf("neutral carried a region %q; it is regionless by definition", got.Selection.Region)
+	}
+	if !got.Selection.ArtifactsInEnglish {
+		t.Fatal("neutral must force ArtifactsInEnglish = true")
 	}
 }
 
