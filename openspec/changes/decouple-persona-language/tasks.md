@@ -316,9 +316,15 @@ That is true for `gentle` and false for `neutral`, which under Decision 5 has no
 The rest of the file is clean — it never pairs `neutral` with `user-language` and never documents
 the legacy aliases, so nothing else needs removing.
 
-- [ ] Rewrite that sentence: `neutral` is REGIONLESS — it carries no region and receives no composed regional directive; the region axis applies to `gentle` only.
-- [ ] Add the legacy alias targets to this spec (currently absent): `gentleman` → `gentle`, `gentleman-neutral-artifacts` → `neutral`.
-- [ ] No test required (doc edit). Re-read the file end to end for leftover old-posture wording.
+- [x] Rewrite that sentence: `neutral` is REGIONLESS — it carries no region and receives no composed regional directive; the region axis applies to `gentle` only. Also added the matching `AND` line to the "Neutral receives the same mentor contract" scenario, so the regionless claim is asserted, not only stated.
+- [x] Add the legacy alias targets to this spec (currently absent): `gentleman` → `gentle`, `gentleman-neutral-artifacts` → `neutral`. Landed as a new requirement, "Legacy Persona Alias Resolution", with three scenarios (each alias plus idempotency of an already-migrated state).
+- [x] No test required (doc edit). Re-read the file end to end for leftover old-posture wording.
+
+**Found in the end-to-end re-read, beyond the two items above:**
+
+- "Canonical Tone Channel" scenario said "persona `gentleman` or `neutral`" — updated to "style `gentle` or `neutral`". Missed by WU-10.1 item 6.
+- "Safe Persona Fallback Semantics" named no concrete fallback ("a default-safe style"), which left the requirement unverifiable once the code had to pick one. It now names `neutral` with no region, states that a missing state.json counts as unreadable, and requires implementations NOT to collapse readable-empty with unreadable-empty — both arrive carrying an empty persona value, and only readability separates them. This tracks the fallback fix committed alongside this unit.
+- Deliberately LEFT as-is: the `gentleman` mentions at the "Gentleman and Neutral reconciliation" requirement refer to the asset filenames `claude/persona-gentleman.md` and `claude/output-style-gentleman.md`, which still exist under those names. The mention at the "Gentle style with the Rioplatense region" scenario is a negative historical reference ("not from a `gentleman` persona variant") and is still accurate.
 
 ---
 

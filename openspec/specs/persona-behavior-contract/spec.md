@@ -4,7 +4,7 @@
 
 ### Requirement: Neutral Mentor Behavior Parity
 
-The system MUST treat `neutral` as a level-neutral parity of the `gentle` mentor behavior contract. Neutral persona content MUST preserve the same senior mentor expectations as `gentle`, including concise answers, direct correction after verification, concept-first teaching, careful technical reasoning, and user-growth-oriented guidance, while MUST NOT bake any marked regional voice, regional slang, voseo, or style branding into the base asset. Regional voice is governed by the independent region axis, not by the style.
+The system MUST treat `neutral` as a level-neutral parity of the `gentle` mentor behavior contract. Neutral persona content MUST preserve the same senior mentor expectations as `gentle`, including concise answers, direct correction after verification, concept-first teaching, careful technical reasoning, and user-growth-oriented guidance, while MUST NOT bake any marked regional voice, regional slang, voseo, or style branding into the base asset. `neutral` is REGIONLESS: it carries no region and receives no composed regional directive at all. The region axis applies to `gentle` only, where regional voice is governed by that axis rather than by the style.
 
 #### Scenario: Neutral receives the same mentor contract without regional voice
 
@@ -12,6 +12,7 @@ The system MUST treat `neutral` as a level-neutral parity of the `gentle` mentor
 - WHEN the generated instruction content is inspected
 - THEN it includes the same mentor behavior expectations as `gentle` for brevity, verification, concept-first explanation, and constructive correction
 - AND it does not bake Rioplatense Spanish, regional slang, voseo, or style branding into the base asset
+- AND no composed regional directive is appended, because `neutral` carries no region
 
 #### Scenario: Gentle style with the Rioplatense region injects the voseo directive
 
@@ -152,9 +153,40 @@ All neutral consumers that are not covered by an agent-specific override MUST re
 
 ---
 
+### Requirement: Legacy Persona Alias Resolution
+
+Persona values written by earlier versions MUST resolve to the two-axis model deterministically. `gentleman` MUST resolve to style `gentle` with region `argentina`, reproducing the voice that install already had. `gentleman-neutral-artifacts` MUST resolve to style `neutral` with no region — NOT to `gentle` — because the alias promised neutral behavior while delivering Rioplatense voice, and the promise is what the user selected. Resolution MUST be idempotent: once a state is migrated, later syncs read the two-axis values directly and MUST NOT re-enter an alias path.
+
+#### Scenario: The gentleman alias keeps its regional voice
+
+- GIVEN persisted persona state holds the legacy value `gentleman`
+- WHEN sync resolves the persona to apply
+- THEN it resolves to style `gentle` with region `argentina`
+- AND `artifactsInEnglish` resolves to `true`
+
+#### Scenario: The hybrid alias resolves to neutral, not to gentle
+
+- GIVEN persisted persona state holds the legacy value `gentleman-neutral-artifacts`
+- WHEN sync resolves the persona to apply
+- THEN it resolves to style `neutral` with no region
+- AND the resolved tuple is identical to the one produced by the plain `neutral` value
+- AND the resolved tuple differs from the one produced by `gentleman`
+- AND the injected content carries no Rioplatense or voseo directive
+
+#### Scenario: A migrated state does not re-enter the alias path
+
+- GIVEN a state.json already migrated to the two-axis model
+- WHEN sync resolves the persona on a later run
+- THEN it reads style, region, and `artifactsInEnglish` directly from the persisted values
+- AND the resolved tuple is identical to the one produced by the run that migrated it
+
+---
+
 ### Requirement: Safe Persona Fallback Semantics
 
-When persisted persona state is unreadable or holds an unknown/invalid value, sync and persona resolution MUST NOT silently introduce a regional voice the user did not choose. The fallback MUST be a default-safe style that does not inject an unselected regional voice. Known legacy migration cases are distinct: an empty or absent `persona` field in a readable prior-version state.json migrates per the migration contract (R1) to `gentle` style with the `argentina` (Rioplatense) region, because that reproduces the prior gentleman default the user already had.
+When persisted persona state is unreadable or holds an unknown/invalid value, sync and persona resolution MUST NOT silently introduce a regional voice the user did not choose. The fallback MUST be style `neutral` with no region and `artifactsInEnglish` resolved to `true`. A missing state.json counts as unreadable: an install that has configured nothing MUST NOT acquire a regional voice.
+
+Known legacy migration cases are distinct: an empty or absent `persona` field in a READABLE prior-version state.json migrates per the migration contract (R1) to `gentle` style with the `argentina` (Rioplatense) region, because that reproduces the prior gentleman default the user already had. Readability is what separates the two, and both arrive carrying an empty persona value, so implementations MUST preserve that distinction rather than collapse them into a single empty-value branch.
 
 #### Scenario: Absent legacy persona field migrates to gentle + Rioplatense
 
@@ -167,15 +199,16 @@ When persisted persona state is unreadable or holds an unknown/invalid value, sy
 
 - GIVEN persisted persona state contains an unknown or invalid value not covered by migration aliases
 - WHEN sync resolves the persona to apply
-- THEN it does not select a regional voice implicitly
-- AND it applies a default-safe style without an unselected regional voice
+- THEN it resolves to style `neutral` with no region
+- AND it does not select a regional voice implicitly
+- AND the resolved tuple differs from the one produced by an empty field in a readable state
 
 #### Scenario: Unreadable persisted persona does not inject an unselected regional voice
 
-- GIVEN persisted persona state cannot be read
+- GIVEN persisted persona state cannot be read, or no state.json exists at all
 - WHEN sync resolves the persona to apply
-- THEN it does not select a regional voice implicitly
-- AND it applies a default-safe style without an unselected regional voice
+- THEN it resolves to style `neutral` with no region
+- AND it does not select a regional voice implicitly
 - AND it may surface a warning if the sync command already reports recoverable configuration issues
 
 ---
@@ -213,7 +246,7 @@ For any adapter with an active output-style channel — Claude Code (gated by `S
 
 #### Scenario: Claude and Kimi residual sections carry no tone content
 
-- GIVEN Claude or Kimi assets are generated with persona `gentleman` or `neutral`
+- GIVEN Claude or Kimi assets are generated with style `gentle` or `neutral`
 - WHEN the CLAUDE.md or KIMI.md-included persona section is inspected
 - THEN it contains only Rules, Expertise, Contextual Skill Loading, a pointer to the output style, and any agent-native tooling section identified in the design's disposition tables (Kimi: `## Kimi-native notes`)
 - AND it contains no tone, language, or philosophy prose
