@@ -7,28 +7,61 @@ Strict TDD is active (`go test ./...`). Every implementation task is preceded by
 
 ---
 
-## ⚠ Rework required — design Decision 5 (`neutral` is regionless)
+## STATUS — every work unit in this slice is done (2026-07-31)
 
-WU-1 through WU-11 were implemented and marked complete under the **previous** posture, in which
+WU-1 through WU-12 are implemented, tested, and committed. The Decision 5 rework that this file
+previously flagged as outstanding has landed in full. Read this block first; everything below is
+the unit-by-unit record.
+
+**Test state**: `go test ./...` → **62 packages ok, 1 failure**. The single failure is
+`TestEveryProductionRefusalNamesResolutionOrDeclaresByDesign` in `internal/cli`, which is
+**pre-existing on `main`** and unrelated to this change — verified by reproducing it on a clean
+`origin/main` worktree. `354c5b50` added a refusal in `review_facade.go` without updating the
+ratchet baseline. Its fix belongs to `main`:
+`GENTLE_AI_REFUSAL_RATCHET_UPDATE=1 go test ./internal/cli -run TestEveryProductionRefusalNamesResolutionOrDeclaresByDesign -count=1`
+
+**Branch**: `feat/decouple-persona-language`, rebased onto `origin/main` `d260cdbc`.
+The fork remote still holds the eight PRE-rebase commits, so publishing requires
+`--force-with-lease`, never a plain push.
+
+### Divergences from the plan, all deliberate and recorded in place
+
+| Where | What changed and why |
+|---|---|
+| WU-5 | Planned as a header-bounded `## Language` SECTION strip; shipped as a LINE-level removal of the regional reply bullet, `stripRegionalVoiceDirective`. Those sections also carry region-agnostic language contract that a section strip would silently delete. |
+| Decision 1 (design) | "Persona content block only" holds for every agent EXCEPT Claude Code and Kimi, which deliver reply voice through their output-style asset (`voiceLivesInOutputStyle`). |
+| Safe fallback | Unknown, invalid, and unreadable persona state now resolve to regionless `neutral`, not to `gentle + argentina`. An empty field in a READABLE state still migrates to `gentle + argentina`. Both arrive as an empty string; only readability separates them. |
+| WU-12 | No genuine RED phase existed — WU-3/WU-4 had already shipped the behavior. Non-vacuity was established by mutation testing instead, recorded under WU-12.3. |
+
+### Still open (NOT blockers for this slice)
+
+1. Reply on issue #912 quoting the WU-12 compatibility matrix.
+2. Choose the chained-PR split. The forecast below recommends five links, each under 400 lines.
+3. Deferred units DWU-A through DWU-E (OpenCode/Kilocode, Kimi, Kiro, Hermes, TUI end-to-end) — Slice 2+ by design, explicitly not in this PR.
+
+---
+
+## ✅ Rework COMPLETE — design Decision 5 (`neutral` is regionless)
+
+WU-1 through WU-11 were originally implemented under the **previous** posture, in which
 `gentleman-neutral-artifacts` migrated to `gentle + argentina` and `neutral` carried a
 `user-language` region. Design Decision 5 reversed that: `neutral` is regionless, and the alias
-migrates to `neutral`. The `[x]` marks below record that the work was done — they do NOT mean the
-code currently matches this document.
+migrates to `neutral`.
 
-The following units are invalidated and MUST be reworked while landing the rebase:
+Every unit below has since been reworked and the code now matches this document.
 
-| Unit | What changes |
-|---|---|
-| WU-1 | `ComposeLanguageDirective` must handle an empty region → artifacts clause only, no regional-voice clause. |
-| WU-3 | `normalizePersona`: `gentleman-neutral-artifacts` → `PersonaNeutral`, no longer `PersonaGentle`. |
-| WU-4 | Migration matrix rows 2 and 3 both target `neutral` + no region. |
-| WU-6 | `isGentlePersona` must return **false** for `gentleman-neutral-artifacts`. |
-| WU-7 / WU-8 | Router sends `gentle` only to `ScreenPersonaLanguage`; `neutral` skips it like `custom`. |
-| WU-9 | Review renders the regionless state for `neutral` explicitly. |
-| WU-10 | `persona-behavior-contract` was already edited under the old posture — see WU-10.2. |
-| WU-12 | New: the compatibility-matrix and order-independence tests requested on issue #912. |
+| Unit | What changed | Done |
+|---|---|---|
+| WU-1 | `ComposeLanguageDirective` handles an empty region → artifacts clause only, no regional-voice clause. | ✅ |
+| WU-3 | `normalizePersona`: `gentleman-neutral-artifacts` → `PersonaNeutral`, no longer `PersonaGentle`. | ✅ |
+| WU-4 | Migration matrix rows 2 and 3 both target `neutral` + no region. | ✅ |
+| WU-6 | `isGentlePersona` returns **false** for `gentleman-neutral-artifacts`. | ✅ |
+| WU-7 / WU-8 | Router sends `gentle` only to `ScreenPersonaLanguage`; `neutral` skips it like `custom`. | ✅ |
+| WU-9 | Review renders the regionless state for `neutral` explicitly. | ✅ |
+| WU-10 | `persona-behavior-contract` re-anchored — see WU-10.2. | ✅ |
+| WU-12 | Compatibility-matrix and order-independence tests requested on issue #912. | ✅ |
 
-Goldens touched by these units must be regenerated with `-update`, never hand-merged.
+Goldens touched by these units were regenerated with `-update`, never hand-merged.
 
 ---
 
@@ -154,35 +187,49 @@ Goldens touched by these units must be regenerated with `-update`, never hand-me
 
 ---
 
-## Work Unit 5 — Asset strip: `stripLanguageSection` + asset edits
+## Work Unit 5 — Asset strip: `stripRegionalVoiceDirective` + asset edits
 
 **Satisfies**: R4 (region-neutral base), R9 (Claude/generic assets)
 
-### WU-5.1 — Test: `stripLanguageSection` transform + asset guard
-- [x] In `internal/components/persona/inject_test.go` (extend) or new `strip_test.go`:
-  - Pure-function test for `stripLanguageSection(content string) string`:
-    - Input: the full text of `claude/persona-gentleman.md` (embed or inline snippet).
-    - Assert: the `## Language` section (lines 37–43) is removed.
-    - Assert: all other H2 sections survive byte-for-byte (`## Rules`, `## Personality`, `## Persona Scope`, `## Tone`, `## Philosophy`, `## Expertise`, `## Behavior`, `## Contextual Skill Loading`, `## Engram Persistent Memory`).
-    - Assert: the stripped output contains NO hardcoded Rioplatense/voseo language line.
-  - Same test for `claude/output-style-gentleman.md`: `## Language Rules` section removed; `## Persona Scope`, `## Tone`, `## Philosophy`, `## Behavior` survive.
-  - Same test for `generic/persona-gentleman.md`: `## Language` section removed; all other sections survive.
-  - Asset guard: after stripping, the gentle base asset must NOT contain "Rioplatense" or "voseo" as a baked-in instruction.
+> ### ⚠ Contract narrowed during implementation — this text was rewritten to match the code
+>
+> This unit was planned as a HEADER-BOUNDED SECTION strip: find `## Language` /
+> `## Language Rules`, delete through the next H2. It shipped as a LINE-level strip of the
+> single regional bullet, and the function is named `stripRegionalVoiceDirective`, not
+> `stripLanguageSection`.
+>
+> The narrowing was correct and must not be undone. Those sections hold region-AGNOSTIC
+> contract — anchoring the reply language to the latest user request, no drift from persona
+> wording, no code-switching — which is compatible with ANY region. Deleting the section to
+> remove one line would silently drop all of it. `strip.go` carries the same warning at its
+> `regionalVoiceDirectives` declaration.
+
+### WU-5.1 — Test: `stripRegionalVoiceDirective` transform + asset guard
+- [x] Pure-function tests in `internal/components/persona/strip_test.go`:
+  - The regional reply bullet is removed.
+  - Content carrying no such directive is returned UNCHANGED — this is what makes the transform a no-op for assets whose voice already lives elsewhere, and idempotent across repeated syncs.
+  - Every other line survives, including the region-agnostic language contract.
+  - The `## Persona Scope` artifacts guard survives — it names voseo but governs generated artifacts, so stripping it would delete a protection this change relies on.
+- [x] Asset guard: no shipped gentle asset carries the hardcoded regional reply line.
 - [x] Run `go test ./internal/components/persona/...` — expect RED.
 
-### WU-5.2 — Implement: `stripLanguageSection` function
-- [x] In `internal/components/persona/strip.go` (new file): implement `stripLanguageSection(content string) string`.
-  - Logic: find the `## Language` or `## Language Rules` H2 header (case-sensitive match on both forms); remove from that line through the next `##`-prefixed line (exclusive) or EOF.
+### WU-5.2 — Implement: `stripRegionalVoiceDirective` function
+- [x] In `internal/components/persona/strip.go` (new file): implement `stripRegionalVoiceDirective(content string) string`.
+  - Logic: remove the exact regional reply bullet listed in `regionalVoiceDirectives`. NOT header-bounded — see the narrowing note above.
+  - Deliberately EXCLUDED from the list: the `## Persona Scope` guard ("Never inject Rioplatense slang, voseo, ... into generated code"). It names voseo but governs generated ARTIFACTS, not reply voice, so removing it would delete a protection this change depends on.
   - This is a pure string transform — no file I/O.
 - [x] Run `go test ./internal/components/persona/...` — confirm strip tests GREEN.
 
 ### WU-5.3 — Strip asset files
-- [x] Edit `internal/assets/claude/persona-gentleman.md`: remove the `## Language` section (lines ~37–43).
-- [x] Edit `internal/assets/claude/output-style-gentleman.md`: remove the `## Language Rules` section (lines ~40–48). Keep `## Persona Scope`.
-- [x] Edit `internal/assets/generic/persona-gentleman.md`: remove its `## Language` section (locate equivalent block).
+- [x] `internal/assets/claude/persona-gentleman.md`: regional reply line gone. This asset ends up with no `## Language` section at all, but that is the residual-channel reduction (Canonical Tone Channel), not this transform.
+- [x] `internal/assets/claude/output-style-gentleman.md`: regional reply line gone; **`## Language Rules` KEPT** (still present, verified).
+- [x] `internal/assets/generic/persona-gentleman.md`: regional reply line gone; **`## Language` KEPT** (still present, verified).
 - [x] Run `go test ./internal/components/persona/...` — asset guard tests GREEN.
 
-**Acceptance**: After stripping, no baked-in Rioplatense/voseo instruction remains in any of the three Claude/generic asset files. The strip is header-bounded: only the `## Language` / `## Language Rules` section is removed.
+**Acceptance**: No hardcoded regional reply directive remains in any of the three Claude/generic
+gentle assets, and the region-agnostic language contract in those assets is untouched. The
+remaining "Rioplatense"/"voseo" mentions in the shipped assets are the `## Persona Scope`
+artifact guard and are supposed to stay.
 
 ---
 
@@ -203,7 +250,7 @@ Goldens touched by these units must be regenerated with `-update`, never hand-me
 
 ### WU-6.2 — Implement: wire directive into inject
 - [x] In `internal/components/persona/inject.go`:
-  - Updated `personaContent` signature to `personaContent(agent, persona, region, artifactsInEnglish)`: call the existing asset read, run `stripLanguageSection()`, then append `"\n" + model.ComposeLanguageDirective(region, artifactsInEnglish)`.
+  - Updated `personaContent` signature to `personaContent(agent, persona, region, artifactsInEnglish)`: call the existing asset read, run `stripRegionalVoiceDirective()`, then append `"\n" + model.ComposeLanguageDirective(region, artifactsInEnglish)`. Agents whose voice lives in the output style (Claude Code, Kimi) return before that append — the composed directive goes onto their output-style asset instead.
   - Renamed `isGentlemanConversationPersona` to `isGentlePersona`. **REWORK (Decision 5)**: it must match `PersonaGentle` and `PersonaGentleman` ONLY — drop `PersonaGentlemanNeutralArtifacts` from the match set. Updated all 4 call sites.
   - Updated `Inject` and `InjectForSync` signatures to accept `region model.RegionID` and `artifactsInEnglish bool`. Updated callers in `sync.go` (InjectForSync) and `run.go` (Inject).
   - Exported `ComposeLanguageDirective` in `internal/model/region.go`.
@@ -435,7 +482,7 @@ WU-1 (model/types/region/directive)
         └─► WU-3 (validate)             [depends on WU-1: PersonaGentle const]
               └─► WU-4 (sync+migrate)   [depends on WU-1,2,3: Selection.Region, PersonaGentle, normalizePersona]
                     └─► WU-6 (inject)   [depends on WU-1 composeLanguageDirective, WU-5 strip]
-WU-5 (stripLanguageSection + assets)    [CAN start after WU-1.2 — no direct WU-2/3/4 dependency]
+WU-5 (stripRegionalVoiceDirective + assets) [CAN start after WU-1.2 — no direct WU-2/3/4 dependency]
   └─► WU-6 (inject)                     [depends on WU-5 + WU-4]
 WU-7 (TUI persona screen)               [depends on WU-1: PersonaGentle]
   └─► WU-8 (TUI language screen)        [depends on WU-1: RegionID/RegionMap, WU-7: ScreenPersonaLanguage route]

@@ -14,7 +14,11 @@ Split the coupled persona axis into two orthogonal axes — **style** (`gentle |
 
 ### Decision 1 — Language line placement: persona content ONLY
 
-**Chosen**: Inject the composed language directive into the **persona content block only**. Strip the `## Language` / `## Language Rules` section from BOTH the persona asset AND the Claude/Kimi output-style assets, making the output-style govern tone/personality only.
+**Chosen**: Inject the composed language directive into the **persona content block only**. Remove the hardcoded regional reply directive from BOTH the persona asset AND the Claude/Kimi output-style assets, making the output-style govern tone/personality only.
+
+> **As-shipped correction.** This decision was written as "strip the `## Language` / `## Language Rules` section". Implementation narrowed it to removing the regional reply LINE; those sections survive in `claude/output-style-gentleman.md` and `generic/persona-gentleman.md` (verified) because they also carry region-agnostic language contract. Decision 2 and the risk table below record the same narrowing.
+>
+> A second as-shipped divergence: for Claude Code and Kimi the composed directive is appended to the OUTPUT-STYLE asset, not the persona block, because those agents deliver their reply voice there (`voiceLivesInOutputStyle`). The "persona content block only" framing holds for every other agent.
 
 **Rationale**: Single source of truth. Today the regional voice is duplicated — it lives in the persona asset's `## Language` section (verified: `claude/persona-gentleman.md:37-42`) AND in the output-style asset's `## Language Rules` section (verified: `claude/output-style-gentleman.md:40-48`). Two copies of a runtime behavior rule is a consistency bug waiting to happen the moment the region is parameterized: a user on Mexican voice would get a persona block saying "Mexicano (tuteo)" and an output-style block still hardcoding Rioplatense voseo. Collapsing the directive into one layer eliminates that contradiction by construction.
 
@@ -28,7 +32,7 @@ Split the coupled persona axis into two orthogonal axes — **style** (`gentle |
 
 **Rejected**: Inject into both layers. Rejected because keeping two parameterized copies in sync is exactly the failure mode the refactor exists to remove.
 
-### Decision 2 — Strip the `## Language` section; KEEP the `gentleman.md` output-style filename
+### Decision 2 — Strip the regional voice directive; KEEP the `gentleman.md` output-style filename
 
 Two sub-decisions:
 
@@ -36,7 +40,7 @@ Two sub-decisions:
 
 The persona assets already isolate the regional voice in a dedicated `## Language` section with a stable header (verified across `claude/persona-gentleman.md:37`, and the proposal confirms all six agent families share the structure). Stripping that one section at build time and appending the composed directive is a clean, testable transform on a known boundary. Creating parallel `persona-gentle.md` files would duplicate ~70 lines × 6 agents of persona body that is 100% identical except for the stripped section — a maintenance liability for zero behavioral gain.
 
-- Implementation: keep reading the existing `persona-gentleman.md` assets, but run them through `stripLanguageSection(content)` before appending `composeLanguageDirective(...)`. The strip targets the `## Language` H2 section by header, removing from that header up to the next H2 (or EOF).
+- Implementation: keep reading the existing `persona-gentleman.md` assets, but run them through `stripRegionalVoiceDirective(content)` before appending `composeLanguageDirective(...)`. **Narrowed during implementation** — the strip was planned as header-bounded (`## Language` H2 through the next H2) and shipped as a LINE-level removal of the single regional reply bullet. Those sections also hold the region-AGNOSTIC language contract, which is valid for every region; deleting the section to remove one line would silently drop it.
 - Guard: a unit test asserts (a) the composed directive is the ONLY regional-voice line in the final string, and (b) the `## Persona Scope`, `## Personality`, `## Tone`, `## Philosophy`, `## Behavior` sections survive byte-for-byte. This blindajes against the "strip removed more than the regional line" risk.
 
 **Asset filenames on disk stay `persona-gentleman.md`** in `internal/assets/...`. These are embedded source assets, never written to the user's disk under that name, so renaming them buys nothing and would churn every `assets.MustRead` call site. The `gentle` identity lives in the model/code layer, not the asset filename.
@@ -148,7 +152,7 @@ If we rename the written file to `gentle.md` and the settings value to `"Gentle"
                                      ▼
               internal/components/persona/inject.go
                 personaContent(agent, persona)            // region-NEUTRAL body
-                  └─ stripLanguageSection(asset)
+                  └─ stripRegionalVoiceDirective(asset)
                 content = body + "\n" + directive          // single append point
                                      │
               ┌──────────────────────┴───────────────────────┐
@@ -170,8 +174,8 @@ If we rename the written file to `gentle.md` and the settings value to `"Gentle"
 | State | `internal/state/state.go` | Add `Region string json:"region,omitempty"`, `ArtifactsInEnglish bool json:"artifactsInEnglish"` (NO omitempty). `MergeAgents` carries both. |
 | Validation | `internal/cli/validate.go` | `normalizePersona()` accepts `gentle\|neutral\|custom` + back-compat aliases `gentleman` → `gentle` and `gentleman-neutral-artifacts` → `neutral` (Decision 5; the two aliases do NOT share a target). |
 | Sync + migration | `internal/cli/sync.go` | `applyResolvedPersona()` migration matrix (below); `BuildSyncSelection` loads `Region` + `ArtifactsInEnglish`. |
-| Injection | `internal/components/persona/inject.go` | `stripLanguageSection()` + append `composeLanguageDirective()`; `isGentlemanConversationPersona()` → `isGentlePersona()` (matches `PersonaGentle` and the `gentleman` alias ONLY — never `gentleman-neutral-artifacts`, per Decision 5); Kimi `language.md` module; output-style dispatch unchanged filenames. |
-| Persona assets | `internal/assets/{claude,generic}/persona-gentleman.md` (slice 1) | Strip `## Language` section only. Other agents deferred. |
+| Injection | `internal/components/persona/inject.go` | `stripRegionalVoiceDirective()` + append `composeLanguageDirective()`; `isGentlemanConversationPersona()` → `isGentlePersona()` (matches `PersonaGentle` and the `gentleman` alias ONLY — never `gentleman-neutral-artifacts`, per Decision 5); Kimi `language.md` module; output-style dispatch unchanged filenames. |
+| Persona assets | `internal/assets/{claude,generic}/persona-gentleman.md` (slice 1) | Remove the hardcoded regional reply line only; the `## Language` / `## Language Rules` sections stay. Other agents deferred. |
 | Output-style assets | `internal/assets/claude/output-style-gentleman.md`, `output-style-neutral.md` (slice 1) | Strip `## Language Rules` section; keep `## Persona Scope`. |
 | TUI | `internal/tui/screens/persona.go`, NEW `persona_language.go`, `model.go`, `router.go`, `screens/review.go` | Drop hybrid option; add region screen + checkbox; route `gentle` → language screen; `neutral` and `custom` skip it (Decision 5); review shows region + flag. |
 | Spec | `openspec/specs/persona-behavior-contract/spec.md` | Reword to decoupled axes. |
@@ -203,7 +207,7 @@ Rows 2 and 3 land on the **same** target tuple. That is intentional: `gentleman-
 Every touchpoint is a pure function or a deterministic file transform:
 
 - `composeLanguageDirective(region, artifactsInEnglish)` — pure; table test across AR/MX/CO/ES/CL + "Idioma del usuario" + free text + **empty region (the `neutral` case)** × {true,false}. The empty-region case asserts the result carries the artifacts clause and NO regional-voice clause.
-- `stripLanguageSection(content)` — pure transform; assert only `## Language` removed, all other H2 sections survive.
+- `stripRegionalVoiceDirective(content)` — pure transform; assert the regional reply bullet is removed, every other line survives, and content without the directive is returned unchanged (which is what makes repeated syncs byte-identical).
 - `personaContent(agent, persona)` — assert returned string contains the composed directive and is region-neutral before composition.
 - `isGentlePersona(persona)` — trivial pure func.
 - `normalizePersona()` — table test including legacy aliases.
@@ -216,7 +220,7 @@ Every touchpoint is a pure function or a deterministic file transform:
 
 | Risk / assumption | Handling |
 |---|---|
-| `stripLanguageSection` over-strips (removes more than the regional line). | Header-bounded strip (`## Language` → next H2/EOF) + survival test for all other sections. Slice-1 scoped to Claude/generic so the transform is proven before fanning out. |
+| `stripRegionalVoiceDirective` over-strips (removes more than the regional line). | RESOLVED by narrowing the transform to the exact regional bullet instead of a header-bounded section strip, plus survival tests. The `## Persona Scope` artifact guard is deliberately excluded from the removal list: it names voseo but governs generated artifacts, not reply voice. |
 | `personaContent()` signature/return change ripples to all callers and tests. | Keep the signature; change only the return value (append after strip). The composition happens inside `personaContent` or in the single caller before write — no new params on the hot path. Validate with existing inject tests first. |
 | Bool zero-value flips artifacts to Spanish on sync. | Explicit `true` in every migration branch; no `omitempty` on `artifactsInEnglish`; round-trip test for `false`. |
 | Output-style filename rename would orphan legacy files. | Decision 2b: keep `gentleman.md` + `"Gentleman"`. No rename, no orphan. |
