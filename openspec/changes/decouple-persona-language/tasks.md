@@ -359,27 +359,59 @@ today proves order-independence against PR #1712.
 
 ### WU-12.1 — Test: N=2 idempotency across every matrix row
 
-- [ ] New file `internal/cli/sync_persona_migration_test.go`.
-- [ ] Table over the five R1 rows (absent, `gentleman`, `gentleman-neutral-artifacts`, `neutral`, `custom`). For each:
-  - Build a legacy `state.json` fixture.
+- [x] New file `internal/cli/sync_persona_migration_test.go`.
+- [x] Table over the five R1 rows (absent, `gentleman`, `gentleman-neutral-artifacts`, `neutral`, `custom`). For each:
+  - Build a legacy `state.json` fixture — written as RAW JSON, not through `state.Write`, because the "absent persona field" row is a shape `InstallState` cannot express (marshalling always emits the key).
   - Run migrate + sync twice.
   - Assert the resolved tuple after run 2 equals run 1.
   - Assert the written `state.json` bytes after run 2 equal run 1.
   - Assert the injected file bytes after run 2 equal run 1.
-- [ ] Run `go test ./internal/cli/...` — expect RED first.
+  - Additionally assert the `persona` value LEFT IN `state.json`: if a legacy alias survives the first sync, every later run re-enters the migration path, and byte-identical output would be masking a state that never converged.
+- [x] Run `go test ./internal/cli/...` — **no genuine RED was available**: WU-3/WU-4 were already implemented, so the tests pass on first run. Non-vacuity was established by mutation instead (see below).
 
 ### WU-12.2 — Test: #1712 cross-sequence convergence
 
-- [ ] In the same file, model both merge orders for `"persona": "gentleman-neutral-artifacts"`:
+- [x] In the same file, model both merge orders for `"persona": "gentleman-neutral-artifacts"`:
   - **Sequence A** — apply #1712's remap first (rewrites the value to `"neutral"`), then this change's migration.
   - **Sequence B** — apply this change's migration directly to the original legacy value.
-- [ ] Assert both sequences produce the identical resolved tuple `{neutral, "", true}`.
-- [ ] Assert both produce byte-identical `state.json` and byte-identical injected content.
-- [ ] Assert a subsequent sync on either result takes the plain `neutral` row, never an alias path.
-- [ ] Run `go test ./internal/cli/...` — expect GREEN once WU-3/WU-4 rework lands.
+- [x] Assert both sequences produce the identical resolved tuple `{neutral, "", true}`.
+- [x] Assert both produce byte-identical `state.json` and byte-identical injected content.
+- [x] Assert a subsequent sync on either result takes the plain `neutral` row, never an alias path.
+- [x] Run `go test ./internal/cli/...` — GREEN.
 
 **Acceptance**: The test file IS the compatibility matrix. Its table is the artifact quoted in
 the reply on issue #912 — if the reply and the test ever disagree, the test is authoritative.
+
+### WU-12.3 — Two findings from writing it, both worth keeping
+
+**1. Reading only `CLAUDE.md` proves nothing about the reply voice.** The first draft compared
+`CLAUDE.md` bytes and asserted "no Rioplatense here" for the hybrid. That assertion passed for the
+wrong reason: Claude Code delivers its voice through the OUTPUT STYLE, not the persona section
+(`voiceLivesInOutputStyle` in `internal/components/persona/inject.go`), so `CLAUDE.md` contains no
+regional directive under ANY persona. Caught only because the test carries a vacuity guard asserting
+the `gentleman` side DOES contain "Rioplatense" — that guard failed and exposed the mistake. The
+capture now reads the whole persona surface: `CLAUDE.md` plus every file in `~/.claude/output-styles/`,
+sorted, with explicit absence markers.
+
+**2. The marker assertions guard the ASSET, not the routing.** Verified by mutation: injecting a
+Rioplatense clause into `ComposeLanguageDirective`'s empty-region branch leaves them GREEN, because
+the neutral path never calls the composer on any agent — `output-style-neutral.md` is written
+verbatim. What they do catch is regional voice baked back into the neutral asset itself, which is
+WU-5's concern verified end to end. Documented in the test so nobody reads them as covering
+Decision 5 routing.
+
+**Mutation results** (each applied to `HEAD`, run, then reverted):
+
+| Mutation | Outcome |
+|---|---|
+| Hybrid alias resolves to `gentle`+`argentina` again (#1702 defect 1) | Kills all three tests |
+| `stateReadable` ignored — unreadable collapses into readable-empty | Kills the WU-4 fallback tests |
+| Write-back stops persisting the migrated persona (alias survives) | Kills the matrix + convergence tests |
+| Empty region emits the Rioplatense clause | **SURVIVES** — see finding 2 |
+| Rioplatense baked into `claude/output-style-neutral.md` | Kills the hybrid test |
+
+Note on tooling: `sd` silently failed to apply a multi-line mutation pattern, which first read as
+"the test does not catch this". Always confirm a mutation actually landed before trusting a survival.
 
 ---
 
