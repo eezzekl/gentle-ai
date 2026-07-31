@@ -1280,6 +1280,14 @@ type persistedSyncState struct {
 	persona            string
 	region             string
 	artifactsInEnglish bool
+	// stateReadable records whether state.json was actually read. It is the only
+	// thing separating a legacy install (readable file, no persona field yet) from
+	// a user who configured nothing (no file, or a corrupt one) — both reach this
+	// struct carrying an empty persona string, and they must resolve differently.
+	//
+	// The zero value is false on purpose: a caller that forgets to set it gets the
+	// regionless fallback, never an unselected regional voice.
+	stateReadable bool
 }
 
 // applyResolvedPersona fills selection.Persona, selection.Region and
@@ -1289,14 +1297,22 @@ type persistedSyncState struct {
 //
 // Migration matrix (applied when state.persona is a legacy alias or empty):
 //
-//	| persisted persona         | resolved persona | region       | artifactsInEnglish |
-//	|---------------------------|------------------|--------------|-------------------|
-//	| "gentleman"               | gentle           | argentina    | true              |
-//	| "gentleman-neutral-artifacts" | gentle       | argentina    | true              |
-//	| "neutral"                 | neutral          | user-language| true              |
-//	| "custom"                  | custom           | (none)       | (unchanged)       |
-//	| "" / absent               | gentle           | argentina    | true              |
-//	| "gentle" (already migrated) | gentle         | (from state) | (from state)      |
+//	| persisted persona             | resolved persona | region       | artifactsInEnglish |
+//	|-------------------------------|------------------|--------------|--------------------|
+//	| "gentleman"                   | gentle           | argentina    | true               |
+//	| "gentleman-neutral-artifacts" | neutral          | (none)       | true               |
+//	| "neutral"                     | neutral          | (none)       | true               |
+//	| "custom"                      | custom           | (none)       | (unchanged)        |
+//	| "" (state readable)           | gentle           | argentina    | true               |
+//	| "gentle" (already migrated)   | gentle           | (from state) | (from state)       |
+//	| unknown value                 | neutral          | (none)       | true               |
+//	| state unreadable or absent    | neutral          | (none)       | true               |
+//
+// The last three rows are the Safe Persona Fallback Semantics requirement: a
+// value we cannot interpret is not evidence the user ever chose a regional
+// voice, so it must never resolve to one. Only an EMPTY field in a readable
+// state.json migrates to argentina, and only because that reproduces the
+// gentleman default such an install already had.
 //
 // ArtifactsInEnglish is set to true EXPLICITLY in every non-custom legacy branch.
 // We never rely on the Go zero-value false — that is the silent-degrade trap for
@@ -1311,6 +1327,13 @@ func applyResolvedPersona(selection *model.Selection, persisted persistedSyncSta
 		return
 	}
 
+	if !persisted.stateReadable {
+		// Nothing was ever configured: no state.json, or one we could not parse.
+		// Regionless neutral is the only answer that cannot invent a preference.
+		applyRegionlessNeutral(selection)
+		return
+	}
+
 	switch model.PersonaID(persisted.persona) {
 	case model.PersonaGentleman:
 		selection.Persona = model.PersonaGentle
@@ -1321,16 +1344,12 @@ func applyResolvedPersona(selection *model.Selection, persisted persistedSyncSta
 		// Migrates to NEUTRAL, not gentle (design Decision 5). The alias promised
 		// neutral and delivered voseo; #1702 defect 1 calls that the bug. Same
 		// target as PR #1712's remap, so either merge order converges here.
-		selection.Persona = model.PersonaNeutral
-		selection.Region = ""
-		selection.ArtifactsInEnglish = true
+		applyRegionlessNeutral(selection)
 
 	case model.PersonaNeutral:
 		// Regionless by definition: no region, artifacts forced to English (the
 		// pre-change neutral asset already mandated English artifacts).
-		selection.Persona = model.PersonaNeutral
-		selection.Region = ""
-		selection.ArtifactsInEnglish = true
+		applyRegionlessNeutral(selection)
 
 	case model.PersonaCustom:
 		selection.Persona = model.PersonaCustom
@@ -1342,16 +1361,29 @@ func applyResolvedPersona(selection *model.Selection, persisted persistedSyncSta
 		selection.Region = persisted.region
 		selection.ArtifactsInEnglish = persisted.artifactsInEnglish
 
-	default:
-		if persisted.persona != "" {
-			// Unknown/misspelled persisted value — fall through to safe defaults.
-		}
-		// Default-safe fallback: empty or unreadable state. Migrates to
-		// gentle+argentina+true so new users get today's behavior.
+	case "":
+		// Legacy install: the file predates the persona field, so this user was
+		// already receiving the gentleman default. Migrating them anywhere else
+		// would silently take away a voice they have been using.
 		selection.Persona = model.PersonaGentle
 		selection.Region = string(model.RegionArgentina)
 		selection.ArtifactsInEnglish = true
+
+	default:
+		// Unknown or misspelled value. Deliberately NOT folded in with the empty
+		// case above: an empty field tells us what the install used to do, while
+		// garbage tells us nothing, and guessing argentina from it would inject a
+		// regional voice the user never selected.
+		applyRegionlessNeutral(selection)
 	}
+}
+
+// applyRegionlessNeutral sets the regionless neutral tuple. Artifacts stay in
+// English because the neutral contract has always mandated English artifacts.
+func applyRegionlessNeutral(selection *model.Selection) {
+	selection.Persona = model.PersonaNeutral
+	selection.Region = ""
+	selection.ArtifactsInEnglish = true
 }
 
 // persistResolvedPersona writes the resolved persona/region/artifactsInEnglish
@@ -1388,13 +1420,13 @@ func RunSyncWithSelection(homeDir string, selection model.Selection) (SyncResult
 	// the persisted values (or safe defaults when state is absent).
 	if selection.Persona == "" {
 		// Reuse the state already read above instead of reading disk twice.
-		var ps persistedSyncState
+		// A failed read is not the same as an empty persona field — pass that
+		// distinction through instead of collapsing both into a zero struct.
+		ps := persistedSyncState{stateReadable: persistedStateErr == nil}
 		if persistedStateErr == nil {
-			ps = persistedSyncState{
-				persona:            persistedState.Persona,
-				region:             persistedState.Region,
-				artifactsInEnglish: persistedState.ArtifactsInEnglish,
-			}
+			ps.persona = persistedState.Persona
+			ps.region = persistedState.Region
+			ps.artifactsInEnglish = persistedState.ArtifactsInEnglish
 		}
 		applyResolvedPersona(&selection, ps)
 	}
@@ -1500,8 +1532,10 @@ func RunSync(args []string) (SyncResult, error) {
 
 	// Read state once for both model-assignment restoration and persona resolution.
 	// On error (e.g. state.json absent), treat persisted values as empty — model
-	// maps stay as-is and persona falls back to neutral.
-	persistedState, _ := state.Read(homeDir)
+	// maps stay as-is and persona falls back to regionless neutral. The error is
+	// kept rather than discarded: persona resolution needs to tell "no file" apart
+	// from "file with no persona field", which migrate to different tuples.
+	persistedState, persistedStateErr := state.Read(homeDir)
 	RestorePersistedSelection(&selection, persistedState, flags)
 	restorePersistedCommunityTools(homeDir, &selection, persistedState)
 
@@ -1581,6 +1615,7 @@ func RunSync(args []string) (SyncResult, error) {
 		persona:            persistedState.Persona,
 		region:             persistedState.Region,
 		artifactsInEnglish: persistedState.ArtifactsInEnglish,
+		stateReadable:      persistedStateErr == nil,
 	})
 
 	if flags.DryRun {

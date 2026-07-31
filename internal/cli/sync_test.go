@@ -3850,13 +3850,17 @@ func TestRunSyncWithSelection_ExplicitPersonaWinsOverState(t *testing.T) {
 	}
 }
 
-// TestRunSyncWithSelection_UnknownPersistedPersonaFallsBackToGentle documents
-// the applyResolvedPersona contract for unrecognized persisted values: an unknown
-// or misspelled persona string must NOT silently propagate — it defaults to
-// gentle+argentina+true (the same safe default as empty/absent state).
-// Updated by decouple-persona-language (WU-4): the safe default changed from
-// neutral to gentle per migration matrix R1.
-func TestRunSyncWithSelection_UnknownPersistedPersonaFallsBackToGentle(t *testing.T) {
+// TestRunSyncWithSelection_UnknownPersistedPersonaFallsBackToNeutral covers the
+// applyResolvedPersona contract for unrecognized persisted values end to end: a
+// misspelled persona string resolves to neutral with no region.
+//
+// An earlier revision of this test asserted gentle+argentina here, reading the
+// migration matrix R1 row for empty state as covering unknown values too. It does
+// not. R1 migrates an EMPTY field because that reproduces a default the user
+// already had; a misspelled value is evidence of nothing, and sending it to
+// argentina injects a regional voice nobody selected — the same shape of defect
+// as #1702 defect 1, which this change exists to remove.
+func TestRunSyncWithSelection_UnknownPersistedPersonaFallsBackToNeutral(t *testing.T) {
 	home := t.TempDir()
 	setSyncTestHome(t, home)
 
@@ -3864,8 +3868,8 @@ func TestRunSyncWithSelection_UnknownPersistedPersonaFallsBackToGentle(t *testin
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	// Write a state with an unrecognized persona value (wrong capitalization).
-	// applyResolvedPersona uses a type-switch on model.PersonaID, so "Gentleman"
-	// (capital G) hits the default branch and resolves to gentle+argentina.
+	// applyResolvedPersona switches on model.PersonaID, so "Gentleman" (capital G)
+	// matches no case and hits the unknown-value branch.
 	if err := state.Write(home, state.InstallState{
 		InstalledAgents: []string{"claude-code"},
 		Persona:         "Gentleman", // capitalized — not a valid PersonaID
@@ -3884,8 +3888,14 @@ func TestRunSyncWithSelection_UnknownPersistedPersonaFallsBackToGentle(t *testin
 		t.Fatalf("RunSyncWithSelection() error = %v", err)
 	}
 
-	if got, want := result.Selection.Persona, model.PersonaGentle; got != want {
-		t.Errorf("result.Selection.Persona = %q, want %q (unknown value must default to gentle)", got, want)
+	if got, want := result.Selection.Persona, model.PersonaNeutral; got != want {
+		t.Errorf("result.Selection.Persona = %q, want %q (unknown value must fall back to neutral)", got, want)
+	}
+	if got := result.Selection.Region; got != "" {
+		t.Errorf("result.Selection.Region = %q, want empty — an unknown persona must not select a regional voice", got)
+	}
+	if !result.Selection.ArtifactsInEnglish {
+		t.Error("result.Selection.ArtifactsInEnglish = false, want true")
 	}
 }
 
@@ -4594,14 +4604,19 @@ func TestApplyResolvedPersonaMigrationMatrix(t *testing.T) {
 		persistedPersona   string
 		persistedRegion    string
 		persistedArtifacts bool
-		wantPersona        model.PersonaID
-		wantRegion         string
-		wantArtifacts      bool
-		customNoInjection  bool // custom row: region is empty and no injection
+		// stateReadable mirrors the production field: false means state.json was
+		// missing or malformed. Set it explicitly on every row — the Go zero value
+		// is the safe side (neutral), never the migrating side.
+		stateReadable     bool
+		wantPersona       model.PersonaID
+		wantRegion        string
+		wantArtifacts     bool
+		customNoInjection bool // custom row: region is empty and no injection
 	}{
 		{
 			name:             "gentleman migrates to gentle+argentina+true",
 			persistedPersona: "gentleman",
+			stateReadable:    true,
 			wantPersona:      model.PersonaGentle,
 			wantRegion:       string(model.RegionArgentina),
 			wantArtifacts:    true,
@@ -4612,6 +4627,7 @@ func TestApplyResolvedPersonaMigrationMatrix(t *testing.T) {
 			// remap target, which is what makes the two changes order-independent.
 			name:             "gentleman-neutral-artifacts migrates to neutral+regionless+true",
 			persistedPersona: "gentleman-neutral-artifacts",
+			stateReadable:    true,
 			wantPersona:      model.PersonaNeutral,
 			wantRegion:       "",
 			wantArtifacts:    true,
@@ -4619,6 +4635,7 @@ func TestApplyResolvedPersonaMigrationMatrix(t *testing.T) {
 		{
 			name:             "neutral migrates to neutral+regionless+true",
 			persistedPersona: "neutral",
+			stateReadable:    true,
 			wantPersona:      model.PersonaNeutral,
 			wantRegion:       "",
 			wantArtifacts:    true,
@@ -4626,16 +4643,45 @@ func TestApplyResolvedPersonaMigrationMatrix(t *testing.T) {
 		{
 			name:              "custom migrates to custom+no region",
 			persistedPersona:  "custom",
+			stateReadable:     true,
 			wantPersona:       model.PersonaCustom,
 			wantRegion:        "",
 			wantArtifacts:     false,
 			customNoInjection: true,
 		},
 		{
-			name:             "empty/absent migrates to gentle+argentina+true",
+			// The migration case, and the reason empty is NOT treated as
+			// "unconfigured": a readable prior-version state.json belongs to a user
+			// who installed before the persona field existed and was already
+			// receiving the gentleman default. Sending them to neutral would take
+			// away their voseo on an ordinary sync they did not ask anything of.
+			name:             "empty in a readable state migrates to gentle+argentina+true",
 			persistedPersona: "",
+			stateReadable:    true,
 			wantPersona:      model.PersonaGentle,
 			wantRegion:       string(model.RegionArgentina),
+			wantArtifacts:    true,
+		},
+		{
+			// Safe Persona Fallback Semantics, spec scenario "Invalid persisted
+			// persona does not inject an unselected regional voice". A misspelled
+			// value is not evidence the user ever chose a regional voice.
+			name:             "unknown value falls back to neutral+regionless+true",
+			persistedPersona: "Gentleman", // capitalized — not a valid PersonaID
+			stateReadable:    true,
+			wantPersona:      model.PersonaNeutral,
+			wantRegion:       "",
+			wantArtifacts:    true,
+		},
+		{
+			// Spec scenario "Unreadable persisted persona does not inject an
+			// unselected regional voice". Also the fresh-install case: no
+			// state.json at all means nothing was ever configured.
+			name:             "unreadable or absent state falls back to neutral+regionless+true",
+			persistedPersona: "",
+			stateReadable:    false,
+			wantPersona:      model.PersonaNeutral,
+			wantRegion:       "",
 			wantArtifacts:    true,
 		},
 	}
@@ -4647,6 +4693,7 @@ func TestApplyResolvedPersonaMigrationMatrix(t *testing.T) {
 				persona:            tt.persistedPersona,
 				region:             tt.persistedRegion,
 				artifactsInEnglish: tt.persistedArtifacts,
+				stateReadable:      tt.stateReadable,
 			}
 			applyResolvedPersona(&sel, state)
 
@@ -4665,6 +4712,42 @@ func TestApplyResolvedPersonaMigrationMatrix(t *testing.T) {
 	}
 }
 
+// TestApplyResolvedPersonaSeparatesUnconfiguredFromLegacyEmpty is the test that
+// actually holds the asymmetry in place. Both cases arrive carrying an empty
+// persona string, so the only thing telling them apart is whether state.json was
+// readable — and a refactor that drops that flag would silently collapse them
+// back into one branch while every other test here still passed.
+//
+// Readable + empty is a legacy install being migrated, so it keeps the gentleman
+// default it already had. Unreadable or absent is a user who configured nothing,
+// so it must not acquire a regional voice nobody selected.
+func TestApplyResolvedPersonaSeparatesUnconfiguredFromLegacyEmpty(t *testing.T) {
+	legacy := model.Selection{}
+	applyResolvedPersona(&legacy, persistedSyncState{persona: "", stateReadable: true})
+
+	unconfigured := model.Selection{}
+	applyResolvedPersona(&unconfigured, persistedSyncState{persona: "", stateReadable: false})
+
+	if legacy.Persona == unconfigured.Persona && legacy.Region == unconfigured.Region {
+		t.Fatalf("readable-empty and unreadable-empty both resolved to {%q, %q} — the two cases collapsed into one branch",
+			legacy.Persona, legacy.Region)
+	}
+	if legacy.Region != string(model.RegionArgentina) {
+		t.Errorf("legacy Region = %q, want %q (migration must preserve the prior gentleman default)",
+			legacy.Region, model.RegionArgentina)
+	}
+	if unconfigured.Region != "" {
+		t.Errorf("unconfigured Region = %q, want empty — nothing configured must not inject a regional voice",
+			unconfigured.Region)
+	}
+	if unconfigured.Persona != model.PersonaNeutral {
+		t.Errorf("unconfigured Persona = %q, want %q", unconfigured.Persona, model.PersonaNeutral)
+	}
+	if !unconfigured.ArtifactsInEnglish {
+		t.Error("unconfigured must keep ArtifactsInEnglish = true")
+	}
+}
+
 // TestApplyResolvedPersonaGentlemanAndNeutralArtifactsConverge asserts that
 // "gentleman" and "gentleman-neutral-artifacts" produce byte-identical tuples,
 // proving the hybrid was a no-op at the migration layer.
@@ -4674,10 +4757,10 @@ func TestApplyResolvedPersonaMigrationMatrix(t *testing.T) {
 // target is what makes the two changes merge-order independent.
 func TestApplyResolvedPersonaHybridConvergesWithNeutral(t *testing.T) {
 	hybrid := model.Selection{}
-	applyResolvedPersona(&hybrid, persistedSyncState{persona: "gentleman-neutral-artifacts"})
+	applyResolvedPersona(&hybrid, persistedSyncState{persona: "gentleman-neutral-artifacts", stateReadable: true})
 
 	neutral := model.Selection{}
-	applyResolvedPersona(&neutral, persistedSyncState{persona: "neutral"})
+	applyResolvedPersona(&neutral, persistedSyncState{persona: "neutral", stateReadable: true})
 
 	if hybrid.Persona != neutral.Persona {
 		t.Errorf("Persona mismatch: hybrid=%q, neutral=%q", hybrid.Persona, neutral.Persona)
@@ -4697,10 +4780,10 @@ func TestApplyResolvedPersonaHybridConvergesWithNeutral(t *testing.T) {
 // quietly restore the old convergence and the test above would still pass.
 func TestApplyResolvedPersonaHybridDoesNotConvergeWithGentleman(t *testing.T) {
 	hybrid := model.Selection{}
-	applyResolvedPersona(&hybrid, persistedSyncState{persona: "gentleman-neutral-artifacts"})
+	applyResolvedPersona(&hybrid, persistedSyncState{persona: "gentleman-neutral-artifacts", stateReadable: true})
 
 	gentleman := model.Selection{}
-	applyResolvedPersona(&gentleman, persistedSyncState{persona: "gentleman"})
+	applyResolvedPersona(&gentleman, persistedSyncState{persona: "gentleman", stateReadable: true})
 
 	if hybrid.Persona == gentleman.Persona && hybrid.Region == gentleman.Region {
 		t.Fatalf("the hybrid alias still resolves to the gentleman tuple {%q, %q} — #1702 defect 1 regression",
@@ -4724,6 +4807,7 @@ func TestApplyResolvedPersonaPreservesAlreadyMigratedState(t *testing.T) {
 		persona:            "gentle",
 		region:             "mexico",
 		artifactsInEnglish: false,
+		stateReadable:      true,
 	})
 
 	if sel.Persona != model.PersonaGentle {
@@ -4742,7 +4826,7 @@ func TestApplyResolvedPersonaPreservesAlreadyMigratedState(t *testing.T) {
 // is a no-op and does not overwrite the explicit value.
 func TestApplyResolvedPersonaDoesNotOverrideExplicitSelection(t *testing.T) {
 	sel := model.Selection{Persona: model.PersonaNeutral}
-	applyResolvedPersona(&sel, persistedSyncState{persona: "gentleman"})
+	applyResolvedPersona(&sel, persistedSyncState{persona: "gentleman", stateReadable: true})
 
 	if sel.Persona != model.PersonaNeutral {
 		t.Errorf("Persona = %q, want %q (explicit should not be overridden)", sel.Persona, model.PersonaNeutral)
