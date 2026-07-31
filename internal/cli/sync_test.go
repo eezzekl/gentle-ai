@@ -4155,7 +4155,23 @@ func TestRunSync_RestoresCodexCarrilAssignments(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Cleanup(codex.SetRuntimeVersionCommandForTest("codex-cli 0.144.0", nil))
 			home := t.TempDir()
-			if err := state.Write(home, state.InstallState{InstalledAgents: []string{"codex"}, CodexCarrilModelAssignments: tt.persisted}); err != nil {
+			// Pin the persona explicitly, matching setupCodexSyncHomeWithPhaseModels.
+			// This suite covers codex carril model migration, so leaving persona
+			// empty made it depend on whatever the persona axis resolves an absent
+			// field to — a coupling none of these cases assert on.
+			//
+			// It also keeps the suite off #2067, a pre-existing main defect where a
+			// repeated sync under a Gentleman-family persona reports 9 byte-identical
+			// files as changed, because syncBackupTargets under-enumerates nested
+			// skill assets and hooks.json while changedSyncFiles treats a missing
+			// baseline as a change. That bug has its own reproduction and is not this
+			// suite's subject.
+			s := state.InstallState{
+				InstalledAgents:             []string{"codex"},
+				Persona:                     string(model.PersonaNeutral),
+				CodexCarrilModelAssignments: tt.persisted,
+			}
+			if err := state.Write(home, s); err != nil {
 				t.Fatalf("state.Write: %v", err)
 			}
 			osUserHomeDir = func() (string, error) { return home, nil }
