@@ -500,54 +500,73 @@ WU-12 (compatibility matrix tests)      [depends on WU-3 + WU-4 rework: alias + 
 
 ---
 
-## Review Workload Forecast
+## Review Workload Forecast — MEASURED, superseding the pre-implementation estimate
 
-| Category | Estimate |
-|---|---|
-| WU-1 (model: types, region, directive) | ~80 lines |
-| WU-2 (selection + state) | ~40 lines |
-| WU-3 (validate) | ~20 lines |
-| WU-4 (sync + migration) | ~80 lines |
-| WU-5 (strip function + 3 asset edits) | ~60 lines (code) + ~25 lines net removed from assets |
-| WU-6 (inject wiring) | ~80 lines |
-| WU-7 (TUI persona screen) | ~40 lines |
-| WU-8 (TUI language screen, new file) | ~120 lines |
-| WU-9 (TUI review) | ~30 lines |
-| WU-10 (spec edit) | ~40 lines |
-| WU-11 (state persist integration) | ~40 lines |
-| WU-12 (compatibility matrix tests, new file) | ~140 lines (all test) |
-| Decision-5 rework across WU-1/3/4/6/7/8/9 + WU-10.2 | ~90 lines net + golden regeneration |
-| **Tests across all WUs** | ~250–280 lines |
-| **Total estimated changed lines** | **~1080–1130 lines** |
+The original forecast projected ~1080-1130 total changed lines and five PRs each under 400. Both
+numbers were wrong. Real total against `origin/main` is **~5000 changed lines**. The estimate
+counted production lines and consistently under-counted tests, goldens, and the SDD artifacts.
 
-**Chained PRs recommended**: YES
+### Delivered chain (feature-branch-chain, user-selected 2026-07-31)
 
-**400-line budget risk**: HIGH — the slice exceeds the 400-line budget by roughly 2x.
+`additions + deletions`, the metric `Check PR Cognitive Load` uses.
 
-**Decision needed before apply**: YES
+| Link | Tip | Contents | Changed lines | Budget |
+|---|---|---|---|---|
+| `...-pr0` | `8590a7e4` | SDD artifacts (proposal, spec, design, tasks) | 1148 | exception |
+| `...-pr1` | `c65d4cfd` | WU-1, WU-2, WU-3 | 628 | exception |
+| `...-pr2` | `b62ea6aa` | WU-4, WU-5 | 707 | exception |
+| `...-pr3` | `957b443c` | WU-6 | 621 | exception |
+| `...-pr4` | `fa04ac87` | WU-7 through WU-11 | 855 | exception |
+| `...-pr5` | `dd6fb1d8` | D5 rework, fixture pins, safe fallback, WU-12, doc corrections | 1584 | exception |
 
-### Recommended split points
+Base order: pr0 on `main`, then each link on the previous.
 
-**PR 1 — Motor core (model + state + validate + sync/migration + asset strip)**
-WU-1 + WU-2 + WU-3 + WU-4 + WU-5
-Estimated: ~380 lines of production code + ~150 lines of tests = ~530 lines
-Risk: still above 400. Can split further:
-  - PR 1a: WU-1 + WU-2 + WU-3 (~140 lines + tests ~100) = ~240 lines ✓
-  - PR 1b: WU-4 + WU-5 (~140 lines + tests ~130) = ~270 lines ✓
+### Why `size:exception` rather than a finer cut
 
-**PR 2 — Inject wiring**
-WU-6 (~80 lines + tests ~100) = ~180 lines ✓
+Re-cutting boundaries cannot reach 400, because **four individual commits already exceed it on
+their own**: the SDD artifacts (1148), WU-1/2/3 (628), WU-4/5 (707), and WU-6 (621). A PR cannot be
+smaller than the commit it carries. Reaching 400 would require decomposing those commits internally,
+which produces intermediate states that were never compiled or tested as a unit. That is the same
+objection that blocks redistributing the Decision 5 rework, and it is not worth trading proven code
+for a smaller diff.
 
-**PR 3 — TUI + spec**
-WU-7 + WU-8 + WU-9 + WU-10 + WU-11 (~270 lines + tests ~100) = ~370 lines ✓
+An eight-link cut was measured before choosing this: pr0 1148, pr1 628, pr2 707, pr3 621,
+pr4a 647, pr4b 208, pr5a 828, pr5b 830. Only one link of eight lands under 400.
 
-**PR 4 — Compatibility matrix + spec re-edit**
-WU-12 + WU-10.2 (~140 lines of test + ~30 lines of doc) = ~170 lines ✓
+Worth noting for reviewers: the TUI commits were never the problem. WU-7 is 134 lines, WU-9 is 112,
+WU-10 is 87, WU-11 is 121. The weight sits in the model/state/inject layers and their tests.
 
-Final recommendation: 5 chained PRs (1a → 1b → 2 → 3 → 4), each under 400 lines.
-Chain strategy: TBD by orchestrator (stacked-to-main or feature-branch-chain).
+### Rationale to record on each PR
 
-**Decision-5 rework placement**: each reworked unit ships inside the PR that introduced it
-(WU-1/3/4 rework in PR 1a/1b, WU-6 in PR 2, WU-7/8/9 in PR 3), so no PR contradicts the spec
-at its own merge point. PR 4 is last because its cross-sequence test can only pass once the
-alias and matrix rework has landed.
+- **pr0** — documentation only, no executable content. It reads far faster than its line count
+  suggests, and splitting planning prose across PRs would leave each implementation link
+  referencing a spec that does not exist yet.
+- **pr1, pr2, pr3** — one atomic work-unit group each, already the smallest shippable slice. Tests
+  are the bulk (pr1 carries ~452 lines of test alone), and separating tests from the code they
+  cover would leave a link that is green for the wrong reason.
+- **pr4** — five small commits (134, 401, 112, 87, 121) that only exceed the budget when grouped.
+  Splittable if a maintainer prefers: WU-7/8/9 at 647 and WU-10/11 at 208.
+- **pr5** — carries the Decision 5 rework, which cannot move earlier (see below), plus the safe
+  fallback fix and the WU-12 matrix. Splittable into 828 + 830 if preferred.
+
+The `size:exception` label is maintainer-applied. Contributors request it with rationale; they do
+not set it themselves.
+
+### Decision 5 rework placement — the original plan was NOT achievable
+
+The pre-implementation plan said each reworked unit would ship inside the PR that introduced it, so
+that no PR contradicts the spec at its own merge point. That is impossible without rewriting history,
+because the rework commit was authored against the FINAL tree and several of its files are modified
+by LATER work units:
+
+| File in the rework | Modified later by | Cannot ship before |
+|---|---|---|
+| `internal/model/region.go`, `region_test.go` | WU-6 | pr3 |
+| `internal/components/persona/inject.go` | WU-6 | pr3 |
+| `internal/cli/validate.go`, `internal/tui/model.go` | WU-8 | pr4 |
+| `internal/cli/sync.go`, `sync_test.go` | WU-11 | pr4 |
+
+Only `internal/model/types.go` and `internal/cli/persona_language_contract_test.go` depend solely on
+the first commit. **Accepted consequence: pr1 through pr4 carry the pre-Decision-5 posture
+(`gentleman-neutral-artifacts` resolving toward `gentle + argentina`) and pr5 corrects it.** Reviewers
+of the earlier links should read them as the history that produced the fix, not as the final contract.
