@@ -87,6 +87,24 @@ Check at end of sync (`RenderSyncReport`, `sync.go:~1570`, or its call site) and
 
 **Scope note**: this supersedes D6's claim that block position no longer matters — it did not matter for truncation, but it did make D3's convergence claim false. Ordering is now stable because persona occupies a replaceable section instead of the whole file.
 
+### D9: Reference files enter the existing backup/verify single source of truth
+
+**Problem**: `references/engram-protocol.md` and `references/sdd-orchestrator.md` are new write targets introduced by this change, but `componentPathsWithWorkspaceScoped` (`run.go:2115`, current main numbering) — the one function `backupTargets`, post-apply verification, and `syncBackupTargets` (via `syncComponentPathsWithWorkspace` → `componentPathsWithWorkspace` for every component except `ComponentPersona`) all read — never mentions `ReferencesDir`. Verified: zero occurrences of `ReferencesDir` in `run.go`/`sync.go` on both `origin/main` and this branch. Left unaddressed, a sync that rewrites these files has no backup snapshot to roll back to, and neither post-apply nor post-sync verification would catch a broken write (stub present, reference file missing or truncated) — the same failure class #1810 was opened to close for the output-style backup gap.
+
+**Choice**: add the reference-file paths inside that same function, at the same two switch arms this change already touches for other reasons:
+- `case model.ComponentEngram:` (`run.go:2120`) — after the existing `StrategyMarkdownSections` append, type-assert `SharedReferenceLayout` and append `filepath.Join(adapter.ReferencesDir(homeDir), "engram-protocol.md")`.
+- `case model.ComponentSDD:` (`run.go:2158`) — same type-assertion, append `filepath.Join(adapter.ReferencesDir(homeDir), "sdd-orchestrator.md")`.
+
+**Interface visibility**: `SharedReferenceLayout` is not a single shared declaration. Per D1 it is declared locally in each consuming component — `internal/components/engram/inject.go` and `internal/components/sdd/inject.go`, structurally identical (`ReferencesDir(homeDir string) string`) — so neither name is in scope unqualified from package `cli`. The assertions above must name `engram.SharedReferenceLayout` and `sdd.SharedReferenceLayout` respectively. Both `run.go` and `sync.go` already import those two packages, so this adds no import. Do not declare a third copy in `cli`: it would add a fourth place to keep in sync and the switch arms are already component-specific.
+
+**Why this alone is install/sync parity**: `syncComponentPathsWithWorkspace` delegates straight to `componentPathsWithWorkspace` → `componentPathsWithWorkspaceScoped` for every component except `ComponentPersona` (its own documented exception — sync skips one JSON-merge step install performs). Engram and SDD are not exceptions, so `backupTargets`, `syncBackupTargets`, post-apply verification, and post-sync verification all read the same call site — one addition point, four consumers, no new abstraction. This reuses the exact discipline `assets.SharedSkillFileNames()` already established on this same function's `ComponentSDD` skills branch ("every deployment path derives from this function; none of them may keep a literal list") — applied here to generated reference content rather than embedded static assets, since the two are not the same category.
+
+**Rebase status — satisfied**: this chain was rebased onto `origin/main` `a245f260` on 2026-08-18, closing the ~1,366-commit gap and adopting the #1810 foundation (`SharedSkillFileNames`, PR #2481/#3161) that it previously predated. The `run.go` line references above are current-main numbering and were re-verified against that base after the rebase; on this branch they shift by roughly +30 because of this change's own additions. The "Post-Merge Constraints" section above (capabilitymanifest, trigger-rules, orchestrator assets) was settled by the same rebase. `go test ./...` is green on the rebased chain, and each of the four links passes `go vet` independently, so D9 is now implementable directly against this branch.
+
+**Testing**: extend the existing `Integration | Migration idempotency` and `Integration | Both-agents convergence` fixtures — both already build a `selection`/`adapters` pair — with an assertion that `syncBackupTargets(...)` and `componentPathsWithWorkspaceScoped(..., ComponentEngram)` / `(..., ComponentSDD)` each contain the two reference-file paths. No new fixture needed.
+
+**Platform coverage**: no OS-specific behavior is introduced — `ReferencesDir` returns a `filepath.Join`-built path exactly like every other adapter path method this change touches (`OutputStyleDir`, `CommandsDir`), and reference-file writes go through the same `WriteFileAtomic` used everywhere else in the pipeline (cross-platform atomic rename, already covered by the existing Windows/Linux/macOS CI matrix). The issue's manual agy validation (2 sessions × 2 OSes) is prototype evidence for Antigravity's own truncation/loading behavior — a third-party CLI this project doesn't control and can't unit-test — not evidence for gentle-ai's own file-writing code, which is already covered generically. No new platform-specific test is proposed because there is no platform-specific code to cover.
+
 ## Data Flow
 
     persona.Inject ──→ GEMINI.md [persona]
@@ -107,7 +125,7 @@ Budget: the prototype figure (≈10.5KB shipped, 11,115 B minus test block) incl
 | `internal/components/engram/` bootstrap render + test | Create | `renderSessionBootstrapStub` |
 | `internal/components/sdd/inject.go` (`injectFileAppend` :2048) | Modify | Stub + reference write; `SelectedAgents` priority |
 | `internal/components/sdd/` gate-stub render + test | Create | `renderSDDGateStub` |
-| `internal/cli/sync.go`, `internal/cli/run.go` | Modify | Populate `SelectedAgents`; budget warning |
+| `internal/cli/sync.go`, `internal/cli/run.go` | Modify | Populate `SelectedAgents`; budget warning; register reference-file paths in `componentPathsWithWorkspaceScoped` (D9) |
 | `internal/components/golden_test.go` + testdata | Modify | Regen sdd-gemini/sdd-antigravity/engram-antigravity against the post-merge rewritten assets; new reference-file goldens; persona goldens unchanged |
 
 ## Testing Strategy (strict TDD — RED first, `go test ./...`)
@@ -119,6 +137,7 @@ Budget: the prototype figure (≈10.5KB shipped, 11,115 B minus test block) incl
 | Integration | Assembled-root byte budget | persona+sdd+engram inject → assert `len < 12000` |
 | Integration | Migration idempotency | Seed legacy ~54KB inline file (verified current: 54,799 B for antigravity — persona 5,189 + sdd 42,850 + engram 6,760) → inject → stub layout; second pass byte-identical |
 | Integration | Both-agents convergence | gemini→antigravity and reverse orders produce identical bytes |
+| Integration | Backup/verify path parity (D9) | Extend the migration-idempotency and convergence fixtures: assert `syncBackupTargets` and `componentPathsWithWorkspaceScoped` (Engram, SDD) each include both reference-file paths |
 
 ## Threat Matrix
 
