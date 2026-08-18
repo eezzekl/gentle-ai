@@ -2256,6 +2256,14 @@ func componentPathsWithWorkspaceScoped(homeDir, workspaceDir string, scope Insta
 			if adapter.SystemPromptStrategy() == model.StrategyMarkdownSections {
 				paths = append(paths, adapter.SystemPromptFile(targetDir))
 			}
+			// The shared reference file is a write target of this component, so it
+			// belongs in the same path list backup and verification already read.
+			// The engram component owns the condition and returns "" wherever
+			// Inject keeps the body inline, so this never names a file that no
+			// install writes (design.md D9).
+			if referencePath := engram.ManagedReferencePath(adapter, targetDir); referencePath != "" {
+				paths = append(paths, referencePath)
+			}
 		case model.ComponentSDD:
 			// Jinja modular hubs (e.g. Kimi KIMI.md) are appended once below so SDD+Persona
 			// do not duplicate the same system prompt path. OpenCode-compatible adapters
@@ -2320,6 +2328,12 @@ func componentPathsWithWorkspaceScoped(homeDir, workspaceDir string, scope Insta
 				// SDD installs the Codex skill-registry hook outside the skills
 				// directory, so it must share the component's backup contract.
 				paths = append(paths, filepath.Join(adapter.GlobalConfigDir(homeDir), "hooks.json"))
+			}
+			// Same single-source-of-truth rule as the Engram arm above: the sdd
+			// component decides whether a reference file is written here, and
+			// returns "" when the orchestrator body stays inline (design.md D9).
+			if referencePath := sdd.ManagedReferencePath(adapter, targetDir); referencePath != "" {
+				paths = append(paths, referencePath)
 			}
 		case model.ComponentSkills:
 			for _, skillID := range selectedSkillIDs(selection) {

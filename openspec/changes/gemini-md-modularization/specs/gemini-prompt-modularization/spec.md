@@ -52,6 +52,22 @@ The generated `sdd-stub` block MUST list SDD commands and imperatively instruct 
 - WHEN reference files are written
 - THEN both reference files exist with source content preserved and no test-marker blocks present
 
+### Requirement: Reference File Backup and Verification Parity
+
+The reference files are managed write targets, so every deployment path MUST derive them from the same decision the writer uses, rather than repeating it. `~/.gemini/references/engram-protocol.md` and `~/.gemini/references/sdd-orchestrator.md` MUST appear in the install backup set, the sync backup set, post-apply verification, and post-sync verification whenever they are written. They MUST NOT appear in any of those sets when they are not written: a workspace-scoped run keeps both bodies inline and writes no reference file, so claiming the paths there would fail verification on a file the run was never asked to create.
+
+#### Scenario: Reference files are backed up and verified on a global run
+
+- GIVEN gemini-cli or antigravity is selected with the Engram or SDD component
+- WHEN install or sync resolves its managed paths under global scope
+- THEN both reference-file paths are present in the backup set and in the verification set, so a rewrite has a snapshot to roll back to and a broken write is caught
+
+#### Scenario: Workspace-scoped run claims no reference file
+
+- GIVEN the same selection under workspace scope
+- WHEN install or sync resolves its managed paths
+- THEN neither reference-file path is claimed, because both bodies stay inline and no reference file is written
+
 ### Requirement: Migration and Idempotency
 
 Syncing over a legacy monolithic `GEMINI.md` (inline engram/orchestrator bodies) MUST convert it to the stub+references layout. A second sync MUST produce byte-identical output to the first (no oscillation). Persona-first ordering MUST be preserved, and other agents' content in the file MUST remain untouched.

@@ -403,3 +403,45 @@ func firstLine(s string) string {
 	}
 	return s
 }
+
+// TestManagedReferencePathMatchesWhatInjectWrites is the single-source-of-truth
+// guard for design.md D9, mirroring the engram component. The install/sync path
+// list must name the orchestrator reference file exactly when Inject writes one,
+// and never otherwise. A path that is listed but never written has no backup
+// snapshot to restore and turns post-apply and post-sync verification into a
+// false failure on every workspace-scoped install.
+func TestManagedReferencePathMatchesWhatInjectWrites(t *testing.T) {
+	for name, adapter := range sharedReferenceAdapters() {
+		t.Run(name+"/home_anchored", func(t *testing.T) {
+			home := newSharedReferenceHome(t)
+
+			got := ManagedReferencePath(adapter, home)
+			if want := sddReferencePath(t, adapter, home); got != want {
+				t.Fatalf("ManagedReferencePath(%s, home) = %q, want %q", name, got, want)
+			}
+
+			if _, err := Inject(home, adapter, ""); err != nil {
+				t.Fatalf("Inject(%s, home) error = %v", name, err)
+			}
+			if _, err := os.Stat(got); err != nil {
+				t.Fatalf("ManagedReferencePath named %q but Inject wrote no such file: %v", got, err)
+			}
+		})
+
+		t.Run(name+"/workspace_scoped", func(t *testing.T) {
+			home := t.TempDir()
+			workspace := t.TempDir()
+			SetUserHomeDirForTest(t, home)
+
+			if got := ManagedReferencePath(adapter, workspace); got != "" {
+				t.Fatalf("ManagedReferencePath(%s, workspace) = %q, want empty: Inject keeps the body inline there", name, got)
+			}
+		})
+	}
+
+	t.Run("adapter_without_shared_reference_layout", func(t *testing.T) {
+		if got := ManagedReferencePath(struct{}{}, t.TempDir()); got != "" {
+			t.Fatalf("ManagedReferencePath(non-layout adapter) = %q, want empty", got)
+		}
+	})
+}

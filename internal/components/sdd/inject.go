@@ -182,6 +182,29 @@ func homeAnchoredReferencePath(layout SharedReferenceLayout) (string, bool) {
 	return filepath.Join(layout.ReferencesDir(home), sddReferenceFileName), true
 }
 
+// ManagedReferencePath returns the absolute path of the shared reference file
+// Inject writes for adapter when the injection target is injectionDir, or ""
+// when Inject writes no reference file there: either the adapter exposes no
+// shared reference layout, or the target is not the home dir the stub
+// advertises (a workspace-scoped install keeps the body inline).
+//
+// This is the single source of truth for that decision. Install and sync derive
+// their backup and verification path lists from it (design.md D9) instead of
+// repeating the condition, so a listed path always has a written file behind it
+// and a written file always has a backup.
+func ManagedReferencePath(adapter any, injectionDir string) string {
+	layout, ok := adapter.(SharedReferenceLayout)
+	if !ok {
+		return ""
+	}
+	referencePath := filepath.Join(layout.ReferencesDir(injectionDir), sddReferenceFileName)
+	advertisedPath, hasHome := homeAnchoredReferencePath(layout)
+	if !hasHome || filepath.Clean(advertisedPath) != filepath.Clean(referencePath) {
+		return ""
+	}
+	return referencePath
+}
+
 // referenceOrchestratorAgent resolves whose orchestrator asset is written to the
 // shared ~/.gemini/references/sdd-orchestrator.md. gemini-cli and antigravity
 // write the same file, and the assets are not reconcilable: the antigravity body
@@ -2783,28 +2806,23 @@ func injectFileAppend(homeDir string, adapter agents.Adapter, opts InjectOptions
 	// orchestrator contract. There the inline body stays: the 12,000-character
 	// budget is a property of the global ~/.gemini/GEMINI.md, not of a
 	// per-project one.
-	if layout, ok := adapter.(SharedReferenceLayout); ok {
-		referencePath := filepath.Join(layout.ReferencesDir(homeDir), sddReferenceFileName)
-		advertisedPath, hasHome := homeAnchoredReferencePath(layout)
-
-		if hasHome && filepath.Clean(advertisedPath) == filepath.Clean(referencePath) {
-			existingReference, readErr := readFileOrEmpty(referencePath)
-			if readErr != nil {
-				return InjectionResult{}, readErr
-			}
-
-			referenceAgent := referenceOrchestratorAgent(adapter.Agent(), opts.SelectedAgents)
-			referenceAgent = preservedOrchestratorAgent(referenceAgent, existingReference)
-
-			refWrite, refErr := filemerge.WriteFileAtomic(referencePath, []byte(renderSDDOrchestratorAsset(referenceAgent)), 0o644)
-			if refErr != nil {
-				return InjectionResult{}, refErr
-			}
-			changed = changed || refWrite.Changed
-			files = append(files, referencePath)
-
-			content = renderSDDGateStub()
+	if referencePath := ManagedReferencePath(adapter, homeDir); referencePath != "" {
+		existingReference, readErr := readFileOrEmpty(referencePath)
+		if readErr != nil {
+			return InjectionResult{}, readErr
 		}
+
+		referenceAgent := referenceOrchestratorAgent(adapter.Agent(), opts.SelectedAgents)
+		referenceAgent = preservedOrchestratorAgent(referenceAgent, existingReference)
+
+		refWrite, refErr := filemerge.WriteFileAtomic(referencePath, []byte(renderSDDOrchestratorAsset(referenceAgent)), 0o644)
+		if refErr != nil {
+			return InjectionResult{}, refErr
+		}
+		changed = changed || refWrite.Changed
+		files = append(files, referencePath)
+
+		content = renderSDDGateStub()
 	}
 
 	// If there is a bare (un-marked) legacy orchestrator block, strip it first

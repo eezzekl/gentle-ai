@@ -74,6 +74,29 @@ func homeAnchoredReferencePath(layout SharedReferenceLayout) (string, bool) {
 	return filepath.Join(layout.ReferencesDir(home), engramReferenceFileName), true
 }
 
+// ManagedReferencePath returns the absolute path of the shared reference file
+// Inject writes for adapter when the injection target is injectionDir, or ""
+// when Inject writes no reference file there: either the adapter exposes no
+// shared reference layout, or the target is not the home dir the stub
+// advertises (a workspace-scoped install keeps the body inline).
+//
+// This is the single source of truth for that decision. Install and sync derive
+// their backup and verification path lists from it (design.md D9) instead of
+// repeating the condition, so a listed path always has a written file behind it
+// and a written file always has a backup.
+func ManagedReferencePath(adapter any, injectionDir string) string {
+	layout, ok := adapter.(SharedReferenceLayout)
+	if !ok {
+		return ""
+	}
+	referencePath := filepath.Join(layout.ReferencesDir(injectionDir), engramReferenceFileName)
+	advertisedPath, hasHome := homeAnchoredReferencePath(layout)
+	if !hasHome || filepath.Clean(advertisedPath) != filepath.Clean(referencePath) {
+		return ""
+	}
+	return referencePath
+}
+
 // renderSessionBootstrapStub renders the short imperative stub written into
 // the root system prompt (under the existing "engram-protocol" marker) for
 // adapters that implement SharedReferenceLayout, in place of the full
@@ -621,20 +644,15 @@ func injectWithOptions(configHomeDir, promptDir string, adapter agents.Adapter, 
 			// the whole protocol. There the inline body stays: the 12,000-char
 			// budget is a property of the global ~/.gemini/GEMINI.md, not of a
 			// per-project one.
-			if layout, ok := adapter.(SharedReferenceLayout); ok {
-				referencePath := filepath.Join(layout.ReferencesDir(promptDir), engramReferenceFileName)
-				advertisedPath, hasHome := homeAnchoredReferencePath(layout)
-
-				if hasHome && filepath.Clean(advertisedPath) == filepath.Clean(referencePath) {
-					refWrite, refErr := filemerge.WriteFileAtomic(referencePath, []byte(protocolContent), 0o644)
-					if refErr != nil {
-						return InjectionResult{}, refErr
-					}
-					changed = changed || refWrite.Changed
-					files = append(files, referencePath)
-
-					protocolContent = renderSessionBootstrapStub()
+			if referencePath := ManagedReferencePath(adapter, promptDir); referencePath != "" {
+				refWrite, refErr := filemerge.WriteFileAtomic(referencePath, []byte(protocolContent), 0o644)
+				if refErr != nil {
+					return InjectionResult{}, refErr
 				}
+				changed = changed || refWrite.Changed
+				files = append(files, referencePath)
+
+				protocolContent = renderSessionBootstrapStub()
 			}
 
 			existing, err := readFileOrEmpty(promptPath)

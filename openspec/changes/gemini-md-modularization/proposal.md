@@ -26,7 +26,7 @@ Note: legacy trigger-rules no longer contribute root bytes — `internal/compone
 ## Capabilities
 
 ### New Capabilities
-- `gemini-prompt-modularization`: root stub + `~/.gemini/references/` layout, bootstrap/sdd-stub blocks, byte-budget warning, and migration idempotency.
+- `gemini-prompt-modularization`: root stub + `~/.gemini/references/` layout, bootstrap/sdd-stub blocks, byte-budget warning, migration idempotency, and backup/verification parity for the reference files.
 
 ### Modified Capabilities
 - `antigravity-support`: shared prompt surface becomes stub+references; the shared-file warning and single shared references dir are preserved.
@@ -55,6 +55,7 @@ Concrete strategy choice is deferred to design. Open questions the design MUST a
 | `internal/components/engram/inject.go` (default case ~529-546) | Modified | Emit reference block + write reference file for gemini/antigravity |
 | `internal/components/sdd/inject.go` (`injectFileAppend` :2048, `hasLegacyBareOrchestrator` :2107) | Modified | Orchestrator becomes reference block + file; add bootstrap/sdd-stub blocks |
 | `internal/cli/sync.go` (component order :324-326) | Constrained | Preserve persona-before-SDD/Engram ordering; add migration + budget warning |
+| `internal/cli/run.go` (`componentPathsWithWorkspaceScoped`) | Modified | Claim the reference files in the one path list backup, post-apply verification, and sync all read — only where they are actually written |
 | `internal/assets/{gemini,antigravity}/sdd-orchestrator.md` | Source | Two separate per-agent assets feed the reference file |
 | `internal/components/golden_test.go` | Modified | New reference-file goldens + assembled-root byte-budget test |
 
